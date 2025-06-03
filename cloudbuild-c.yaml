@@ -1,0 +1,16 @@
+steps:
+  # Step 1: Download .whl file from GitHub release using gh CLI
+  - name: 'ghcr.io/devcontainers/cli:latest'  # Lightweight image with `gh`
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        gh release download v2.25.0 \
+          --repo "twd/twd-web-sdk" \
+          --pattern "twd-sdk-2.25.0-cp310-cp360-linux_2_17_x86_64,linux2014_x86_64.whl" \
+          --skip-existing \
+          --dir .
+
+  # Step 2: Upload the artifact to the GCS bucket
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'  # Image with gcloud CLI
+    args: ['gsutil', 'cp', './twd-sdk-2.25.0-cp310-cp360-linux_2_17_x86_64,linux2014_x86_64.whl', 'gs://twd-web-sdk/']

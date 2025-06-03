@@ -1,0 +1,39 @@
+steps:
+  # Step 1: Download artifact from GitHub using direct URL
+  - name: 'gcr.io/cloud-builders/curl'
+    args:
+      - '-L'
+      - '-H'
+      - 'Authorization: token ${_GITHUB_TOKEN}'
+      - '-H'
+      - 'Accept: application/octet-stream'
+      - 'https://github.com/twd/twd-web-sdk/releases/download/v2.25.0/twd-2.25.0-cp310-linux_2_17_x86_64.linux2014_x86_64.whl'
+      - '-o'
+      - 'twd-2.25.0-cp310-linux_2_17_x86_64.linux2014_x86_64.whl'
+    env:
+      - 'GITHUB_TOKEN=${_GITHUB_TOKEN}'
+
+  # Step 2: Upload artifact to GCS bucket
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - 'cp'
+      - 'twd-2.25.0-cp310-linux_2_17_x86_64.linux2014_x86_64.whl'
+      - 'gs://twd-web-sdk-gs/'
+
+  # Step 3: Optional - Verify upload and set metadata
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - 'ls'
+      - '-l'
+      - 'gs://twd-web-sdk-gs/twd-2.25.0-cp310-linux_2_17_x86_64.linux2014_x86_64.whl'
+
+# Substitutions for variables
+substitutions:
+  _GITHUB_TOKEN: 'your-github-token'  # Replace with actual token or use secret manager
+
+# Optional: Store logs
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+# Optional: Set timeout
+timeout: '1200s'
