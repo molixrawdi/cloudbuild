@@ -1,0 +1,146 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Set your Google Cloud project ID
+        PROJECT_ID = 'your-project-id'
+        // Set your Cloud Build trigger name or ID
+        TRIGGER_NAME = 'your-trigger-name'
+        // Set the region where your trigger is located (optional)
+        REGION = 'global'
+        // Google Cloud credentials (stored as Jenkins secret)
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account-key')
+    }
+    
+    stages {
+        stage('Setup Google Cloud SDK') {
+            steps {
+                script {
+                    // Install or update gcloud CLI if needed
+                    sh '''
+                        # Check if gcloud is installed
+                        if ! command -v gcloud &> /dev/null; then
+                            echo "Installing Google Cloud SDK..."
+                            curl https://sdk.cloud.google.com | bash
+                            exec -l $SHELL
+                            source ~/google-cloud-sdk/path.bash.inc
+                        fi
+                        
+                        # Authenticate using service account key
+                        gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}
+                        
+                        # Set the project
+                        gcloud config set project ${PROJECT_ID}
+                        
+                        # Verify authentication
+                        gcloud auth list
+                    '''
+                }
+            }
+        }
+        
+        stage('Trigger Cloud Build') {
+            steps {
+                script {
+                    try {
+                        // Method 1: Trigger by name
+                        sh '''
+                            echo "Triggering Cloud Build: ${TRIGGER_NAME}"
+                            gcloud builds triggers run ${TRIGGER_NAME} \
+                                --region=${REGION} \
+                                --branch=main
+                        '''
+                        
+                        // Alternative Method 2: Trigger with substitutions
+                        /*
+                        sh '''
+                            gcloud builds triggers run ${TRIGGER_NAME} \
+                                --region=${REGION} \
+                                --branch=main \
+                                --substitutions=_ENVIRONMENT=production,_VERSION=${BUILD_NUMBER}
+                        '''
+                        */
+                        
+                        // Alternative Method 3: Submit build directly (without trigger)
+                        /*
+                        sh '''
+                            gcloud builds submit . \
+                                --config=cloudbuild.yaml \
+                                --substitutions=_ENVIRONMENT=production
+                        '''
+                        */
+                        
+                    } catch (Exception e) {
+                        error "Failed to trigger Cloud Build: ${e.getMessage()}"
+                    }
+                }
+            }
+        }
+        
+        stage('Monitor Build Status') {
+            steps {
+                script {
+                    // Optional: Monitor the build status
+                    sh '''
+                        echo "Checking recent builds..."
+                        gcloud builds list --limit=5 --format="table(id,status,createTime,source.repoSource.branchName)"
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                // Clean up credentials
+                sh 'gcloud auth revoke --all || true'
+            }
+        }
+        success {
+            echo 'Cloud Build triggered successfully!'
+        }
+        failure {
+            echo 'Failed to trigger Cloud Build'
+        }
+    }
+}
+
+# /*
+# Additional Configuration Notes:
+
+# 1. Jenkins Credentials Setup:
+#    - Store your GCP service account key as a 'Secret file' credential in Jenkins
+#    - Name it 'gcp-service-account-key' or update the credential ID in the pipeline
+
+# 2. Service Account Permissions:
+#    Your service account needs these IAM roles:
+#    - Cloud Build Editor
+#    - Source Repository Administrator (if using Cloud Source Repositories)
+#    - Storage Admin (for build logs and artifacts)
+
+# 3. Alternative Triggering Methods:
+
+#    A. Trigger with specific commit:
+#    gcloud builds triggers run TRIGGER_NAME --sha=COMMIT_SHA
+
+#    B. Trigger with tag:
+#    gcloud builds triggers run TRIGGER_NAME --tag=TAG_NAME
+
+#    C. Trigger with substitutions:
+#    gcloud builds triggers run TRIGGER_NAME --substitutions=KEY1=VALUE1,KEY2=VALUE2
+
+# 4. Environment Variables You Can Customize:
+#    - PROJECT_ID: Your Google Cloud project ID
+#    - TRIGGER_NAME: Your Cloud Build trigger name or ID
+#    - REGION: Region where your trigger is located (default: global)
+
+# 5. Pipeline Parameters (add to pipeline block if needed):
+#    parameters {
+#        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Branch to build')
+#        string(name: 'ENVIRONMENT', defaultValue: 'staging', description: 'Target environment')
+#    }
+
+# 6. For webhook triggers, you might want to pass the commit SHA:
+#    --sha=${GIT_COMMIT}
+# */
