@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account')
+        GCP_PROJECT = 'your-gcp-project-id'
+        VERSION_FILE = 'VERSION'
+    }
+
+    parameters {
+        choice(name: 'VERSION_BUMP', choices: ['patch', 'minor', 'major'], description: 'Version bump type')
+    }
+
+    stages {
+        stage('Set Up GCP Auth') {
+            steps {
+                sh '''
+                    gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS"
+                    gcloud config set project $GCP_PROJECT
+                '''
+            }
+        }
+
+        stage('Read & Bump Version') {
+            steps {
+                script {
+                    def version = readFile(VERSION_FILE).trim()
+                    def (major, minor, patch) = version.tokenize('.').collect { it.toInteger() }
+
+                    switch (params.VERSION_BUMP) {
+                        case 'major': major++; minor = 0; patch = 0; break
+                        case 'minor': minor++; patch = 0; break
+                        case 'patch': patch++; break
+                    }
+
+                    newVersion = "${major}.${minor}.${patch}"
+                    echo "New version: ${newVersion}"
+
+                    writeFile(file: VERSION_FILE, text: newVersion)
+                }
+            }
+        }
+
+        stage('Commit New Version (Optional)') {
+            steps {
+                sh '''
+                    git config user.email "jenkins@example.com"
+                    git config user.name "Jenkins CI"
+                    git add VERSION
+                    git commit -m "Bump version to ${newVersion}"
+                    git push origin HEAD:main
+                '''
+            }
+        }
+
+        stage('Trigger Cloud Build') {
+            steps {
+                sh '''
+                    gcloud builds submit \
+                      --substitutions=TAG_NAME=${newVersion} \
+                      --config=cloudbuild.yaml .
+                '''
+            }
+        }
+    }
+}
