@@ -1,0 +1,25 @@
+gcloud builds submit --substitutions=_SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+gcloud builds submit --substitutions=_SHORT_SHA=abc1234 .
+
+
+steps:
+- name: 'gcr.io/cloud-builders/git'
+  args: ['checkout', '${_SORT_SHA}']
+substitutions:
+  _SORT_SHA: 'default-sha-value'
+
+
+steps:
+- name: 'gcr.io/cloud-builders/git'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    echo "$(git rev-parse --short HEAD)" > /workspace/short_sha.txt
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    SHORT_SHA=$(cat /workspace/short_sha.txt)
+    docker build -t gcr.io/$PROJECT_ID/myapp:$$SHORT_SHA .
