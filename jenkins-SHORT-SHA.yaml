@@ -1,0 +1,278 @@
+pipeline {
+    agent any
+    
+    // Specify which branches to build
+    options {
+        // Only keep 10 builds
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        // Timeout the build after 1 hour
+        timeout(time: 1, unit: 'HOURS')
+    }
+    
+    // Define branch-specific triggers
+    triggers {
+        // Poll SCM for changes on main/master branch every 5 minutes
+        pollSCM(env.BRANCH_NAME == 'main' ? 'H/5 * * * *' : '')
+    }
+    
+    environment {
+        // Define environment variables
+        NODE_VERSION = '18'
+        BUILD_ENV = getBuildEnvironment()
+        // GCP Configuration
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account-key')
+        GCP_PROJECT_ID = 'your-project-id'
+        GCP_REGION = 'us-central1'
+        // Git short SHA - will be set during checkout
+        SHORT_SHA = ''
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                // Checkout specific branch
+                checkout scm
+                script {
+                    // Get short SHA (first 7 characters of commit hash)
+                    env.SHORT_SHA = sh(
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "Building branch: ${env.BRANCH_NAME}"
+                    echo "Commit SHA: ${env.GIT_COMMIT}"
+                    echo "Short SHA: ${env.SHORT_SHA}"
+                    echo "Build environment: ${env.BUILD_ENV}"
+                }
+            }
+        }
+        
+        stage('Setup') {
+            steps {
+                script {
+                    // Authenticate with GCP
+                    echo "Authenticating with Google Cloud..."
+                    sh '''
+                        # Activate service account
+                        gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}
+                        
+                        # Set project
+                        gcloud config set project ${GCP_PROJECT_ID}
+                        
+                        # Verify authentication
+                        gcloud auth list
+                        gcloud config list
+                    '''
+                    
+                    // Branch-specific setup
+                    if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master') {
+                        echo "Setting up production environment"
+                    } else if (env.BRANCH_NAME.startsWith('develop')) {
+                        echo "Setting up development environment"
+                    } else if (env.BRANCH_NAME.startsWith('feature/')) {
+                        echo "Setting up feature branch environment"
+                    } else {
+                        echo "Setting up default environment"
+                    }
+                }
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                script {
+                    // Build using Google Cloud Build with short SHA
+                    def imageTag = "${env.BUILD_ENV}-${env.SHORT_SHA}-${env.BUILD_NUMBER}"
+                    def imageName = "gcr.io/${GCP_PROJECT_ID}/myapp:${imageTag}"
+                    
+                    sh """
+                        echo "Building application with Google Cloud Build..."
+                        echo "Image tag: ${imageTag}"
+                        
+                        # Submit build to Google Cloud Build
+                        gcloud builds submit \
+                            --tag ${imageName} \
+                            --project ${GCP_PROJECT_ID} \
+                            --region ${GCP_REGION} \
+                            --timeout=1200s \
+                            --substitutions=SHORT_SHA=${env.SHORT_SHA},BRANCH_NAME=${env.BRANCH_NAME} \
+                            .
+                        
+                        echo "Build completed: ${imageName}"
+                    """
+                    
+                    // Store image name and tag for later stages
+                    env.DOCKER_IMAGE = imageName
+                    env.IMAGE_TAG = imageTag
+                }
+            }
+        }
+        
+        stage('Test') {
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        script {
+                            sh '''
+                                echo "Running unit tests..."
+                                # Add your test commands here
+                                # npm test
+                                # mvn test
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            // Publish test results if they exist
+                            // publishTestResults testResultsPattern: 'test-results/*.xml'
+                            echo "Unit tests completed"
+                        }
+                    }
+                }
+                stage('Integration Tests') {
+                    when {
+                        anyOf {
+                            branch 'main'
+                            branch 'master'
+                            branch 'develop'
+                        }
+                    }
+                    steps {
+                        script {
+                            sh '''
+                                echo "Running integration tests..."
+                                # Add integration test commands here
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Dev') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'feature/*'
+                }
+            }
+            steps {
+                script {
+                    echo "Deploying ${env.DOCKER_IMAGE} to development environment..."
+                    sh """
+                        # Deploy to Cloud Run (development)
+                        gcloud run deploy myapp-dev \
+                            --image ${env.DOCKER_IMAGE} \
+                            --platform managed \
+                            --region ${GCP_REGION} \
+                            --project ${GCP_PROJECT_ID} \
+                            --allow-unauthenticated \
+                            --memory 512Mi \
+                            --cpu 1 \
+                            --max-instances 10 \
+                            --set-env-vars="SHORT_SHA=${env.SHORT_SHA},BUILD_NUMBER=${env.BUILD_NUMBER}" \
+                            --tag=${env.SHORT_SHA}
+                    """
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "Deploying ${env.DOCKER_IMAGE} to staging environment..."
+                    sh """
+                        # Deploy to Cloud Run (staging)
+                        gcloud run deploy myapp-staging \
+                            --image ${env.DOCKER_IMAGE} \
+                            --platform managed \
+                            --region ${GCP_REGION} \
+                            --project ${GCP_PROJECT_ID} \
+                            --allow-unauthenticated \
+                            --memory 1Gi \
+                            --cpu 2 \
+                            --max-instances 20 \
+                            --set-env-vars="SHORT_SHA=${env.SHORT_SHA},BUILD_NUMBER=${env.BUILD_NUMBER}" \
+                            --tag=${env.SHORT_SHA}
+                    """
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                allOf {
+                    branch 'main'
+                    // Only deploy to prod if tests passed
+                    expression { currentBuild.result != 'FAILURE' }
+                }
+            }
+            steps {
+                script {
+                    // Require manual approval for production deployment
+                    input message: 'Deploy to production?', ok: 'Deploy'
+                    echo "Deploying ${env.DOCKER_IMAGE} to production environment..."
+                    sh """
+                        # Deploy to Cloud Run (production)
+                        gcloud run deploy myapp-prod \
+                            --image ${env.DOCKER_IMAGE} \
+                            --platform managed \
+                            --region ${GCP_REGION} \
+                            --project ${GCP_PROJECT_ID} \
+                            --allow-unauthenticated \
+                            --memory 2Gi \
+                            --cpu 4 \
+                            --max-instances 100 \
+                            --min-instances 1 \
+                            --set-env-vars="SHORT_SHA=${env.SHORT_SHA},BUILD_NUMBER=${env.BUILD_NUMBER}" \
+                            --tag=${env.SHORT_SHA}
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                echo "Pipeline completed for branch: ${env.BRANCH_NAME}"
+                // Clean up workspace
+                cleanWs()
+            }
+        }
+        success {
+            script {
+                if (env.BRANCH_NAME == 'main') {
+                    echo "Main branch build successful - notifying team"
+                    // Add notification logic (email, Slack, etc.)
+                }
+            }
+        }
+        failure {
+            script {
+                echo "Build failed for branch: ${env.BRANCH_NAME}"
+                // Add failure notification logic
+            }
+        }
+    }
+}
+
+// Helper function to determine build environment based on branch
+def getBuildEnvironment() {
+    switch(env.BRANCH_NAME) {
+        case 'main':
+        case 'master':
+            return 'production'
+        case 'develop':
+            return 'development'
+        case ~/^feature\/.*/:
+            return 'feature'
+        case ~/^hotfix\/.*/:
+            return 'hotfix'
+        default:
+            return 'default'
+    }
+}
