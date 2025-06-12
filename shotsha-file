@@ -1,0 +1,27 @@
+gcloud builds submit \
+  --config cloudbuild.yaml \
+  --substitutions=_SHORT_SHA=$(git rev-parse --short HEAD) \
+  .
+
+
+ steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [
+    'build',
+    '--build-args', 'COMMIT_SHA=${_SHORT_SHA}',
+    '-t', 'gcr.io/$PROJECT_ID/my-app:${_SHORT_SHA}',
+    '.'
+  ]
+
+
+
+steps:
+- name: 'gcr.io/cloud-builders/git'
+  entrypoint: 'bash'
+  args: ['-c', 'echo $(git rev-parse --short HEAD) > /workspace/short_sha.txt']
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args: [
+    '-c',
+    'SHORT_SHA=$(cat /workspace/short_sha.txt) && docker build --build-args COMMIT_SHA=$$SHORT_SHA -t gcr.io/$PROJECT_ID/my-app:$$SHORT_SHA .'
+  ]     
