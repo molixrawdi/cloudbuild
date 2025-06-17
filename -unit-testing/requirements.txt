@@ -1,0 +1,22 @@
+# requirements.txt
+# Main application dependencies
+requests>=2.28.0
+flask>=2.2.0
+psycopg2-binary>=2.9.0
+
+# Testing dependencies
+pytest>=7.1.0
+pytest-cov>=4.0.0
+pytest-mock>=3.8.0
+coverage>=6.4.0
+
+# Code quality dependencies
+pylint>=2.15.0
+black>=22.6.0
+flake8>=5.0.0
+
+# Security scanning
+safety>=2.1.0
+
+# Mocking utilities
+responses>=0.21.0

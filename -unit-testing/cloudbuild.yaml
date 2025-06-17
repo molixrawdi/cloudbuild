@@ -1,0 +1,60 @@
+# cloudbuild.yaml
+steps:
+  # Step 1: Install dependencies
+  - name: 'python:3.9-slim'
+    entrypoint: 'pip'
+    args: ['install', '-r', 'requirements.txt']
+    id: 'install-deps'
+
+  # Step 2: Run linting (optional but recommended)
+  - name: 'python:3.9-slim'
+    entrypoint: 'python'
+    args: ['-m', 'pylint', 'app.py']
+    id: 'lint'
+    waitFor: ['install-deps']
+
+  # Step 3: Run unit tests with coverage
+  - name: 'python:3.9-slim'
+    entrypoint: 'python'
+    args: ['-m', 'pytest', 'test_app.py', '-v', '--cov=app', '--cov-report=xml', '--cov-report=term']
+    id: 'unit-tests'
+    waitFor: ['install-deps']
+    env:
+      - 'PYTHONPATH=/workspace'
+      - 'DATABASE_URL=postgresql://test:test@localhost/testdb'
+
+  # Step 4: Generate test report (optional)
+  - name: 'python:3.9-slim'
+    entrypoint: 'python'
+    args: ['-m', 'pytest', 'test_app.py', '--junitxml=test-results.xml']
+    id: 'test-report'
+    waitFor: ['unit-tests']
+
+  # Step 5: Security scanning (optional)
+  - name: 'python:3.9-slim'
+    entrypoint: 'pip'
+    args: ['install', 'safety']
+    id: 'install-safety'
+    waitFor: ['install-deps']
+
+  - name: 'python:3.9-slim'
+    entrypoint: 'safety'
+    args: ['check', '--json']
+    id: 'security-check'
+    waitFor: ['install-safety']
+
+# Store test results and coverage reports
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}-build-artifacts'
+    paths:
+      - 'test-results.xml'
+      - 'coverage.xml'
+
+# Build options
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_32'
+
+# Timeout for the entire build
+timeout: '600s'
