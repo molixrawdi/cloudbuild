@@ -1,0 +1,8 @@
+# Install current directory as editable package
+pip install -e .
+
+# Install from a local path
+pip install -e /path/to/my/package
+
+# Install from git repo in editable mode
+pip install -e git+https://github.com/user/repo.git#egg=package-name

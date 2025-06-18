@@ -1,0 +1,11 @@
+sp
+rfid
+
+
+
+
+## why
+
+1-skills left
+2- antipaterns and non comon tooling in ai.
+3- adapt 
