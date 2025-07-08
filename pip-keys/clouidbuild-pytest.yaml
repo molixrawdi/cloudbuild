@@ -34,7 +34,7 @@ steps:
        pip install pytest pytest-cov httpx requests python-dotenv \
          google-cloud-storage google-cloud-logging starlette fastapi \
          numpy onnxruntime transformers scikit-learn soundfile \
-         openai-whisper pydub pydantic-settings ffmpeg-downloader ffdl
+         openai-whisper pydub pydantic-settings ffmpeg-downloader cv2 fastapi_cache2
        
        # Verify pytest installation
        pytest --version
