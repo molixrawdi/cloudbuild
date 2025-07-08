@@ -1,0 +1,12 @@
+steps:
+- id: 'Test this'
+  name: 'localrepo/python:latest'
+  entrypoint: 'bash'
+  args:    
+    - '-c'
+    - |
+       wget https://www.python.org/ftp/python/3.10.0/Python-3.10.0.tgz && tar -xzf Python-3.10.0.tgz && cd Python-3.10.0 && ./configure && make && sudo make install \
+       && python3 --version && pip3 install --upgrade pip && virtualenv -p /usr/bin/python3.10 mdpg-3.10 && source mdpg-3.10/bin/activate && pip install --upgrade pip && pip install pytest && pytest --version \
+       && pip install pytest-cov httpx requests dotenv google-cloud-storage google-cloud-loggin starlette fastapi numpy onnxruntime transformers sciki&& pytest --cov=./app --cov-report=html --cov-report=term scikit-learn soundfile whisper pydub pydantic_settings ffmeg-downloader ffmpeg libavcodec-extra ffdl \
+       && pytest --cov=./app --cov-report=html --cov-report=term -k "not test_download" && pytest --cov=./app --cov-report=html --cov-report=term -k "test_download" && pytest --cov=./app --cov-report=html --cov-report=term -k "test_download_ffmpeg" \
+             
