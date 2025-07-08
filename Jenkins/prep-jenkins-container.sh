@@ -176,3 +176,7 @@ docker run --rm \
   -v jenkins_home:/var/jenkins_home \
   -v $(pwd):/backup \
   alpine sh -c "cd /var/jenkins_home && tar xzf /backup/jenkins_backup.tar.gz"
+
+  # Jenkins latest image
+
+  docker pull jenkins/jenkins:jdk21
