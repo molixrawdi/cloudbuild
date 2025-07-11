@@ -14,3 +14,10 @@ steps:
   # Step 2: Upload the artifact to the GCS bucket
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'  # Image with gcloud CLI
     args: ['gsutil', 'cp', './twd-sdk-2.25.0-cp310-cp360-linux_2_17_x86_64,linux2014_x86_64.whl', 'gs://twd-web-sdk/']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'  # includes gsutil
+    entrypoint: 'gsutil'
+    args:
+      - 'cp'
+      - 'tew50-sdk-3.1.2-linux.x86-64.whl'
+      - 'gs://tew-web-sdk-2025/sdk.x86-64/'
