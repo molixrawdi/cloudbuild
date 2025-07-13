@@ -1,0 +1,19 @@
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                println "This is the begginig of the docker file on node 01".execute().text 
+                sh 'wgethttps://github.com/molixrawdi/cloudbuild/blob/main/python-app/requirements.txt'
+                sh 'https://github.com/molixrawdi/cloudbuild/blob/main/python-app/app.py'
+                sh 'https://github.com/molixrawdi/cloudbuild/blob/main/python-app/Dockerfile'
+                sh 'docker build -t my-image .'
+            }
+        }
+        stage('Deploy') {
+            steps {
+                deployToDocker()  // <-- Custom shared library or plugin
+            }
+        }
+    }
+}
