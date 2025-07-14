@@ -394,7 +394,7 @@ To generate requirements.txt use pip freeze
 pip freeze > requirements.txt
 ```
 
-Issues with Security:
+Issues with Security:(Share libraries)
 
 Solution 1: Disable CSRF Protection (Temporary Fix)
 Warning: Only use this temporarily for testing, not in production.
@@ -543,3 +543,12 @@ Ensure proper proxy configuration if applicable
 Use the web interface for initial setup when possible
 
 The most common cause is browser-related, so try Solution 3 first. If you're using automation or API calls, Solution 2 or 7 will be most helpful.RetryClaude does not have the ability to run the code it generates yet.Claude can make mistakes. Please double-check responses.
+
+Options with shared libraries:
+Load Implicitly: Every time a job is run this gets loaded. If used or not.
+
+Allow default version to be overriden:
+Might not work for productions.
+
+Include @Library changes in job recent change.
+
