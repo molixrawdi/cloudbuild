@@ -393,3 +393,153 @@ To generate requirements.txt use pip freeze
 ```
 pip freeze > requirements.txt
 ```
+
+Issues with Security:
+
+Solution 1: Disable CSRF Protection (Temporary Fix)
+Warning: Only use this temporarily for testing, not in production.
+
+Go to Manage Jenkins → Configure Global Security
+Uncheck "Prevent Cross Site Request Forgery exploits"
+Save and try creating the shared library again
+Re-enable CSRF protection after completing the setup
+
+Solution 2: Get and Use Crumb Token (API Method)
+If you're using the Jenkins API or curl commands:
+
+```
+# Get the crumb
+CRUMB=$(curl -s -u "username:password" \
+  "http://your-jenkins-url/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,\":\",//crumb)")
+
+# Use the crumb in your request
+curl -X POST -u "username:password" \
+  -H "$CRUMB" \
+  "http://your-jenkins-url/scriptApproval/approveSignature" \
+  -d "signature=your-signature"
+```
+
+Solution 3: Browser-Based Solutions
+Clear browser cache and cookies:
+
+Clear your browser's cache and cookies for the Jenkins site
+Log out and log back into Jenkins
+Try creating the shared library again
+
+Use incognito/private browsing mode:
+
+Open Jenkins in an incognito/private browser window
+Log in and try creating the shared library
+
+Solution 4: Configure Proper CSRF Settings
+
+Go to Manage Jenkins → Configure Global Security
+In the CSRF Protection section:
+
+Check "Prevent Cross Site Request Forgery exploits"
+Set Default Crumb Issuer
+Check "Enable proxy compatibility" if you're behind a proxy
+
+
+Save the configuration
+
+Solution 5: Jenkins CLI Method
+Use Jenkins CLI to create the shared library:
+bash# Download Jenkins CLI
+wget http://your-jenkins-url/jnlpJars/jenkins-cli.jar
+
+# Create shared library via CLI
+java -jar jenkins-cli.jar -s http://your-jenkins-url \
+  -auth username:password \
+  create-job shared-library-name < config.xml
+Solution 6: Check Reverse Proxy Configuration
+If Jenkins is behind a reverse proxy (nginx, Apache), ensure proper headers are set:
+Nginx example:
+nginxlocation /jenkins {
+    proxy_pass http://localhost:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+Solution 7: REST API with Proper Authentication
+If using REST API:
+bash# Get crumb first
+CRUMB=$(curl -s -u "username:api-token" \
+  "http://your-jenkins-url/crumbIssuer/api/json" | \
+  jq -r '.crumbRequestField + ":" + .crumb')
+
+# Use in your shared library creation request
+curl -X POST -u "username:api-token" \
+  -H "$CRUMB" \
+  -H "Content-Type: application/xml" \
+  -d @shared-library-config.xml \
+  "http://your-jenkins-url/createItem?name=MySharedLibrary"
+Solution 8: Check Jenkins System Log
+
+Go to Manage Jenkins → System Log
+Look for CSRF-related errors
+This can help identify the specific cause
+
+Best Practices
+
+Use API tokens instead of passwords when possible
+Keep CSRF protection enabled in production
+Ensure proper proxy configuration if applicable
+Use the web interface for initial setup when possible
+
+The most common cause is browser-related, so try Solution 3 first. If you're using automation or API calls, Solution 2 or 7 will be most helpful.RetryClaude does not have the ability to run the code it generates yet.Claude can make mistakes. Please double-check responses. Sonnet 4
+
+
+
+```
+# Download Jenkins CLI
+wget http://your-jenkins-url/jnlpJars/jenkins-cli.jar
+
+# Create shared library via CLI
+java -jar jenkins-cli.jar -s http://your-jenkins-url \
+  -auth username:password \
+  create-job shared-library-name < config.xml
+```
+# Reverse proxy:
+
+```
+location /jenkins {
+    proxy_pass http://localhost:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+# Rest API solution
+
+```
+# Get crumb first
+CRUMB=$(curl -s -u "username:api-token" \
+  "http://your-jenkins-url/crumbIssuer/api/json" | \
+  jq -r '.crumbRequestField + ":" + .crumb')
+
+# Use in your shared library creation request
+curl -X POST -u "username:api-token" \
+  -H "$CRUMB" \
+  -H "Content-Type: application/xml" \
+  -d @shared-library-config.xml \
+  "http://your-jenkins-url/createItem?name=MySharedLibrary"
+```
+
+Solution 8: Check Jenkins System Log
+
+Go to Manage Jenkins → System Log
+Look for CSRF-related errors
+This can help identify the specific cause
+
+Best Practices
+
+Use API tokens instead of passwords when possible
+Keep CSRF protection enabled in production
+Ensure proper proxy configuration if applicable
+Use the web interface for initial setup when possible
+
+The most common cause is browser-related, so try Solution 3 first. If you're using automation or API calls, Solution 2 or 7 will be most helpful.RetryClaude does not have the ability to run the code it generates yet.Claude can make mistakes. Please double-check responses.
