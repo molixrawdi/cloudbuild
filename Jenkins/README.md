@@ -117,6 +117,16 @@ agent {
 
 ```
 agent {
+    dockerfile {
+        filename 'Dockerfile.build'
+        dir 'build'
+    }
+}
+```
+
+### Kubernetes
+```
+agent {
     kubernetes {
         yaml '''
         spec:
