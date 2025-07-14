@@ -76,3 +76,55 @@ java -jar jenkins-cli.jar -s http://<Jenkins-server-url-or-ip> list-plugins --us
 Select the plugin needed from:
 
 https://updates.jenkins-ci.org/downloads/plugins
+
+
+## Agents
+
+Jenkins pipelines can have several types of agents that determine where and how your pipeline stages execute:
+Agent Types
+any - Runs on any available agent in the Jenkins environment. This is the most flexible option but gives you no control over the execution environment.
+none - No global agent is allocated for the pipeline. Each stage must define its own agent. This is useful when different stages need different execution environments.
+label - Runs on agents with specific labels. You can target agents based on their capabilities, operating system, or other characteristics:
+
+
+```
+agent { label 'linux && docker' }
+```
+
+### node
+
+```
+agent { 
+    node {
+        label 'windows'
+        customWorkspace '/custom/path'
+    }
+}
+```
+### Docker
+
+```
+
+agent { 
+    docker {
+        image 'maven:3.8.1-adoptopenjdk-11'
+        args '-v /tmp:/tmp'
+    }
+}
+```
+
+### Dockerfile
+
+```
+agent {
+    kubernetes {
+        yaml '''
+        spec:
+          containers:
+          - name: maven
+            image: maven:3.8.1-adoptopenjdk-11
+        '''
+    }
+}
+
+```
