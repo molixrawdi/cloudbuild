@@ -53,4 +53,26 @@ AWS Lambda Cloud	 Success
 Libvirt Agents	 Success
 AWS Codebuild Cloud	 Success
 Loading plugin extensions	 Success
-Go back to the top page
+Go back to the top pages
+
+
+### To install the plugins using the cli
+
+```
+
+java -jar jenkin-cli.jar -s http://<Target-Jenkins-server-url/> install-plugin parameterized-trigger <PLUGIN-1-URL> <PlUGIN-2-URL> --username <USER-NAME> --password <PASSWORD> --restart
+
+```
+The above can be put in a shell script and parameters passed in this way:
+
+source script-name param-02 param-02 param-03
+
+There is a command that can help list the plugins:
+
+```
+java -jar jenkins-cli.jar -s http://<Jenkins-server-url-or-ip> list-plugins --username <USER-NAME> --password <PASSWORD>
+```
+
+Select the plugin needed from:
+
+https://updates.jenkins-ci.org/downloads/plugins
