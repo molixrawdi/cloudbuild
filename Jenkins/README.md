@@ -388,3 +388,8 @@ pipeline {
 
 ##### Note:
 The ${env.GIT_COMMIT[0..7]} syntax extracts the first 8 characters of the commit SHA, giving you the short SHA that's commonly used in Git operations.
+
+To generate requirements.txt use pip freeze
+```
+pip freeze > requirements.txt
+```
