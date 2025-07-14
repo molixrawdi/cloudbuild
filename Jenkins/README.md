@@ -138,3 +138,159 @@ agent {
 }
 
 ```
+Pipeline Structure Options
+pipeline - The root block that defines a declarative pipeline
+agent - Specifies where the pipeline or stage will run
+
+any, none, label, node, docker, dockerfile, kubernetes
+
+stages - Contains all the pipeline stages
+stage - Individual stage within the pipeline
+steps - Contains the actual build steps within a stage
+Pipeline Directives
+environment - Defines environment variables
+
+```
+environment {
+    CC = 'clang'
+    PATH = "$PATH:/usr/local/bin"
+}
+```
+
+### parameters:
+
+```
+parameters {
+    string(name: 'BRANCH', defaultValue: 'main')
+    booleanParam(name: 'DEPLOY', defaultValue: false)
+    choice(name: 'ENVIRONMENT', choices: ['dev', 'staging', 'prod'])
+}
+
+```
+### Triggers
+
+```
+triggers {
+    cron('H 2 * * *')
+    pollSCM('H/5 * * * *')
+    upstream(upstreamProjects: 'job1,job2', threshold: hudson.model.Result.SUCCESS)
+}
+```
+### Options
+```
+options {
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    timeout(time: 1, unit: 'HOURS')
+    retry(3)
+    skipDefaultCheckout()
+    skipStagesAfterUnstable()
+    checkoutToSubdirectory('src')
+    newContainerPerStage()
+    preserveStashes()
+    quietPeriod(5)
+    disableConcurrentBuilds()
+    parallelsAlwaysFailFast()
+}
+```
+
+### Tools
+
+```
+tools {
+    maven 'maven-3.8.1'
+    jdk 'jdk-11'
+    nodejs 'node-16'
+}
+```
+### Inputs
+
+
+```
+input {
+    message "Deploy to production?"
+    ok "Deploy"
+    submitter "admin,deploy-team"
+    parameters {
+        choice(name: 'TARGET', choices: ['staging', 'production'])
+    }
+}
+```
+### When / Conditions
+
+```
+when {
+    branch 'main'
+    environment name: 'DEPLOY', value: 'true'
+    not { branch 'PR-*' }
+    anyOf {
+        branch 'main'
+        branch 'develop'
+    }
+    allOf {
+        branch 'main'
+        environment name: 'DEPLOY', value: 'true'
+    }
+    buildingTag()
+    changelog '.*\\[ci skip\\].*'
+    changeset "**/*.js"
+    changeRequest()
+    equals expected: 2, actual: currentBuild.number
+    expression { return params.ENVIRONMENT == 'production' }
+    tag "release-*"
+    triggeredBy 'SCMTrigger'
+}
+```
+
+### Stage level 
+
+
+```
+parallel {
+    stage('Test A') { /* ... */ }
+    stage('Test B') { /* ... */ }
+}
+```
+
+### Matrix
+
+```
+matrix {
+    axes {
+        axis {
+            name 'PLATFORM'
+            values 'linux', 'windows', 'mac'
+        }
+    }
+    stages {
+        stage('test') { /* ... */ }
+    }
+}
+```
+
+### Post
+
+```
+
+post {
+    always { /* runs regardless of build result */ }
+    success { /* runs only if successful */ }
+    failure { /* runs only if failed */ }
+    unstable { /* runs only if unstable */ }
+    changed { /* runs only if status changed */ }
+    fixed { /* runs only if previous build failed and current succeeded */ }
+    regression { /* runs only if previous build succeeded and current failed */ }
+    aborted { /* runs only if aborted */ }
+    unsuccessful { /* runs if not successful */ }
+    cleanup { /* runs after all other post conditions */ }
+}
+
+```
+
+### Library
+
+```
+
+libraries {
+    lib('my-shared-library@main')
+}
+```
