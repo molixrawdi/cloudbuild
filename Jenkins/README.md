@@ -552,3 +552,4 @@ Might not work for productions.
 
 Include @Library changes in job recent change.
 
+Select modern scm, to then select git.
