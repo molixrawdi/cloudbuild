@@ -294,3 +294,24 @@ libraries {
     lib('my-shared-library@main')
 }
 ```
+
+
+### Custom tricks increase visibility
+
+#### Show shots sha in pipeline
+
+```
+pipeline {
+    agent any
+    
+    post {
+        always {
+            emailext (
+                subject: "${env.JOB_NAME} - Build #${env.BUILD_NUMBER} - ${currentBuild.currentResult} - ${env.GIT_COMMIT[0..7]}",
+                body: "Build ${env.BUILD_NUMBER} completed with status: ${currentBuild.currentResult}",
+                to: "team@example.com"
+            )
+        }
+    }
+}
+```
