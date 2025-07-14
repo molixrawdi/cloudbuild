@@ -300,6 +300,7 @@ libraries {
 
 #### Show shots sha in pipeline
 
+##### Using email extension macros
 ```
 pipeline {
     agent any
@@ -315,3 +316,75 @@ pipeline {
     }
 }
 ```
+
+
+##### Using Git Token Macros
+
+```
+pipeline {
+    agent any
+    
+    post {
+        always {
+            emailext (
+                subject: '$PROJECT_NAME - Build #$BUILD_NUMBER - $BUILD_STATUS - ${GIT_REVISION,length=8}',
+                body: '$DEFAULT_CONTENT',
+                to: '$DEFAULT_RECIPIENTS'
+            )
+        }
+    }
+}
+```
+
+
+Method 3: Global Configuration
+You can also modify the default subject globally in Jenkins:
+
+Go to Manage Jenkins → Configure System
+Find the Extended E-mail Notification section
+Modify the Default Subject field to include:
+$PROJECT_NAME - Build #$BUILD_NUMBER - $BUILD_STATUS - ${GIT_REVISION,length=8}
+
+
+Available Git-Related Token Macros
+
+${GIT_REVISION} - Full commit SHA
+${GIT_REVISION,length=8} - Short commit SHA (first 8 characters)
+${GIT_BRANCH} - Git branch name
+${GIT_AUTHOR_NAME} - Author name
+${GIT_AUTHOR_EMAIL} - Author email
+
+
+##### More Details
+
+```
+pipeline {
+    agent any
+    
+    post {
+        failure {
+            emailext (
+                subject: "FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER} - ${env.GIT_COMMIT[0..7]}",
+                body: """
+                Build Failed!
+                Job: ${env.JOB_NAME}
+                Build Number: ${env.BUILD_NUMBER}
+                Git Commit: ${env.GIT_COMMIT}
+                Git Branch: ${env.GIT_BRANCH}
+                """,
+                to: "team@example.com"
+            )
+        }
+        success {
+            emailext (
+                subject: "SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER} - ${env.GIT_COMMIT[0..7]}",
+                body: "Build completed successfully!",
+                to: "team@example.com"
+            )
+        }
+    }
+}
+```
+
+##### Note:
+The ${env.GIT_COMMIT[0..7]} syntax extracts the first 8 characters of the commit SHA, giving you the short SHA that's commonly used in Git operations.
