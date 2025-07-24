@@ -1,0 +1,164 @@
+# .github/workflows/flask-app.yml
+name: Flask App CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/flask-app
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Generate build matrix
+        id: set-matrix
+        run: |
+          # Python script to generate dynamic matrix
+          python3 << 'EOF'
+          import json
+          import os
+          
+          # Define your build matrix logic here
+          matrix = {
+              "include": [
+                  {"python_version": "3.9", "base_image": "python", "environment": "staging"},
+                  {"python_version": "3.10", "base_image": "python-slim", "environment": "staging"},
+                  {"python_version": "3.11", "base_image": "python", "environment": "production"},
+                  {"python_version": "3.12", "base_image": "python-alpine", "environment": "development"}
+              ]
+          }
+          
+          # Output the matrix
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"matrix={json.dumps(matrix)}\n")
+          EOF
+
+  build-and-test:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Generate build configuration
+        run: |
+          # Python script to handle complex build logic
+          python3 << 'EOF'
+          import os
+          import json
+          
+          # Get matrix values
+          python_version = "${{ matrix.python_version }}"
+          base_image = "${{ matrix.base_image }}"
+          environment = "${{ matrix.environment }}"
+          
+          # Generate dynamic Dockerfile content
+          dockerfile_content = f"""
+FROM {base_image}:{python_version}
+
+WORKDIR /app
+
+# Environment-specific optimizations
+{"RUN apk add --no-cache gcc musl-dev" if base_image == "python-alpine" else ""}
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 5000
+
+CMD ["flask", "run", "--host=0.0.0.0"]
+"""
+          
+          # Write Dockerfile
+          with open("Dockerfile.generated", "w") as f:
+              f.write(dockerfile_content.strip())
+          
+          # Generate image tag
+          image_tag = f"${{{{ env.REGISTRY }}}}/${{{{ env.IMAGE_NAME }}}}:{python_version}-{environment}"
+          
+          # Set output for next steps
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f"IMAGE_TAG={image_tag}\n")
+              f.write(f"ENVIRONMENT={environment}\n")
+          EOF
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.generated
+          push: false
+          tags: ${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Run tests
+        run: |
+          docker run --rm ${{ env.IMAGE_TAG }} python -m pytest tests/ -v
+      
+      - name: Security scan
+        run: |
+          # Install and run security scanner
+          docker run --rm -v $PWD:/tmp/.cache/ \
+            aquasec/trivy:latest image ${{ env.IMAGE_TAG }}
+      
+      - name: Push image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.generated
+          push: true
+          tags: ${{ env.IMAGE_TAG }}
+      
+      - name: Deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Python deployment script
+          python3 << 'EOF'
+          import os
+          import subprocess
+          
+          environment = os.environ.get('ENVIRONMENT')
+          image_tag = os.environ.get('IMAGE_TAG')
+          
+          if environment == 'production':
+              # Deploy to production
+              print(f"Deploying {image_tag} to production")
+              # Add your deployment logic here
+              
+          elif environment == 'staging':
+              # Deploy to staging
+              print(f"Deploying {image_tag} to staging")
+              # Add your deployment logic here
+          EOF
