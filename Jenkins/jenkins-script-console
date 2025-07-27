@@ -1,0 +1,21 @@
+import jenkins.model.*
+import com.cloudbees.hudson.plugins.folder.*
+
+def jenkins = Jenkins.getInstance()
+
+// Create main pipeline config folder
+def pipelineFolder = jenkins.createProject(Folder.class, "pipeline-configs")
+pipelineFolder.setDescription("Central location for pipeline configurations")
+
+// Create subfolders
+def environments = pipelineFolder.createProject(Folder.class, "environments")
+environments.setDescription("Environment-specific configurations")
+
+def templates = pipelineFolder.createProject(Folder.class, "templates")
+templates.setDescription("Pipeline templates and shared configurations")
+
+def applications = pipelineFolder.createProject(Folder.class, "applications")
+applications.setDescription("Application-specific pipeline configurations")
+
+jenkins.save()
+println "Pipeline configuration folders created successfully"

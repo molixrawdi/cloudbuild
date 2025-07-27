@@ -1,0 +1,29 @@
+// Jenkinsfile
+pipeline {
+    agent any
+    
+    environment {
+        PIPELINE_CONFIG_DIR = "${JENKINS_HOME}/pipeline-configs"
+        CONFIG_REPO = "https://github.com/company/pipeline-configs.git"
+    }
+    
+    stages {
+        stage('Load Configuration') {
+            steps {
+                script {
+                    // Clone configuration repository
+                    dir("${PIPELINE_CONFIG_DIR}") {
+                        git branch: 'main', url: "${CONFIG_REPO}"
+                    }
+                    
+                    // Load specific configuration
+                    def configFile = "${PIPELINE_CONFIG_DIR}/configs/${env.JOB_NAME}.yaml"
+                    if (fileExists(configFile)) {
+                        def config = readYaml file: configFile
+                        env.BUILD_CONFIG = writeJSON returnText: true, json: config
+                    }
+                }
+            }
+        }
+    }
+}

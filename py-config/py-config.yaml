@@ -1,0 +1,28 @@
+# config.py
+import yaml
+from pathlib import Path
+
+def load_yaml_config(config_file='pipeline_config.yaml'):
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Convert string paths to Path objects
+    paths = config.get('paths', {})
+    for key, value in paths.items():
+        paths[key] = Path(value).expanduser().resolve()
+    
+    return config
+
+# pipeline_config.yaml
+"""
+paths:
+  pipeline_configs: ~/jenkins/pipeline_configs
+  templates: ~/jenkins/templates
+  shared_libraries: ~/jenkins/shared_libs
+  workspace: /var/lib/jenkins/workspace
+  logs: /var/log/jenkins
+
+pipeline_settings:
+  default_timeout: 3600
+  max_concurrent_builds: 5
+"""
