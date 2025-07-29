@@ -41,8 +41,6 @@ jobDsl scriptText: '''
     }
 '''
 
-
-
 ### 4th example below
 
 '''
@@ -54,7 +52,7 @@ jobDsl targets: 'dsljobs/**/*.groovy',
 
 '''
 
-### 5th example below:
+### 5th example below
 
 '''
 jobDsl targets: 'dsljobs/**/*.groovy',
@@ -76,9 +74,4 @@ script {
 }
 '''
 
-### 7th
-
-'''
-
-
-'''
+### Link: https://jenkins.io/doc/pipeline/steps/job-dsl/
