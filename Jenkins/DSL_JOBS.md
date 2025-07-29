@@ -76,3 +76,71 @@ script {
 '''
 
 ### Link: https://jenkins.io/doc/pipeline/steps/job-dsl/
+
+#### Sparce chekouts: Allo one to checkout certain paths from folders.
+
+```
+
+checkout([
+    $class: 'GitSCM',
+    branches: [[name: 'main']],
+    extensions: [
+        [$class: 'SparseCheckoutPaths', 
+         sparseCheckoutPaths: [
+             [$class: 'SparseCheckoutPath', path: 'src/'],
+             [$class: 'SparseCheckoutPath', path: 'docs/'],
+             [$class: 'SparseCheckoutPath', path: 'Dockerfile']
+         ]]
+    ],
+    userRemoteConfigs: [[url: 'https://github.com/user/repo.git']]
+])
+```
+### example:
+
+```
+
+pipeline {
+    agent any
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scmGit(
+                    branches: [[name: 'main']],
+                    extensions: [
+                        sparseCheckoutPaths([
+                            sparseCheckoutPath('frontend/'),
+                            sparseCheckoutPath('shared/'),
+                            sparseCheckoutPath('package.json')
+                        ])
+                    ],
+                    userRemoteConfigs: [[url: 'https://github.com/user/repo.git']]
+                )
+            }
+        }
+    }
+}
+```
+
+### example
+
+```
+
+// Only specific directories
+sparseCheckoutPaths: [
+    [$class: 'SparseCheckoutPath', path: 'backend/'],
+    [$class: 'SparseCheckoutPath', path: 'shared/']
+]
+
+// Exclude patterns (use ! prefix)
+sparseCheckoutPaths: [
+    [$class: 'SparseCheckoutPath', path: '*'],
+    [$class: 'SparseCheckoutPath', path: '!tests/']
+]
+
+// Multiple specific files
+sparseCheckoutPaths: [
+    [$class: 'SparseCheckoutPath', path: 'Dockerfile'],
+    [$class: 'SparseCheckoutPath', path: 'docker-compose.yml'],
+    [$class: 'SparseCheckoutPath', path: 'package.json']
+]
+```
