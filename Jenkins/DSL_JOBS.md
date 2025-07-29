@@ -144,3 +144,27 @@ sparseCheckoutPaths: [
     [$class: 'SparseCheckoutPath', path: 'package.json']
 ]
 ```
+
+### changing directory in jenkins jobs
+
+
+```
+script {
+    dir('test') {
+        // All commands here run inside the 'test' directory
+        sh 'pwd'  // shows /workspace/test
+        sh 'ls -la'
+    }
+}
+```
+### example
+
+```
+script {
+    sh 'mkdir -p build'
+    dir('build') {
+        sh 'cmake ..'
+        sh 'make'
+    }
+}
+```
