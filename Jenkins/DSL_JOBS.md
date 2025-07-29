@@ -17,7 +17,7 @@ jobDsl targets: 'dsl-scripts/**/*.groovy'
 
 '''
 // Remove existing jobs not defined in DSL
-jobDsl targets: 'dsljobs/**/*.groovy', 
+jobDsl targets: 'dsljobs/**/*.groovy',
        removedJobAction: 'DELETE'
 
 // Ignore existing jobs
