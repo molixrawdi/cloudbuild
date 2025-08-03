@@ -28,7 +28,7 @@ properties([
                     sandbox: false,
                     script: """
                         import DockerImageLister
-                        return DockerImageLister.listImages('europe-west1-docker.pkg.dev/cortexica-atmscrts-int-d/atom-be')
+                        return DockerImageLister.listImages('c')
                     """
                 ]
             ]
@@ -44,16 +44,16 @@ properties([
 // Example substitution
 static List<String> listImages() {
     return [
-        "europe-west1-docker.pkg.dev/cortexica-atmscrts-int-d/atom-be/image1:latest",
-        "europe-west1-docker.pkg.dev/cortexica-atmscrts-int-d/atom-be/image2:latest",
-        "europe-west1-docker.pkg.dev/cortexica-atmscrts-int-d/atom-be/image3:latest"
+        "europe-west1-docker.pkg.dev/example01/python/image1:latest",
+        "europe-west1-docker.pkg.dev/example01/python/image2:latest",
+        "europe-west1-docker.pkg.dev/example01/python/image3:latest"
     ]
 }
 
 #######
 
 static List<String> listImages() {
-    def cmd = "gcloud artifacts docker images list europe-west1-docker.pkg.dev/cortexica-atmscrts-int-d/atom-be --format='value(NAME)'"
+    def cmd = "gcloud artifacts docker images list europe-west1-docker.pkg.dev/example01/python --format='value(NAME)'"
     def proc = cmd.execute()
     proc.waitFor()
     if (proc.exitValue() == 0) {
