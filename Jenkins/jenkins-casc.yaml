@@ -1,0 +1,78 @@
+jenkins:
+  numExecutors: 2
+  scmCheckoutRetryCount: 3
+  mode: NORMAL
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+       - id: "admin"
+         password: "${JENKINS_ADMIN_PASSWORD}"
+         
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "${JENKINS_URL}"
+    
+  globalLibraries:
+    libraries:
+    - name: "shared-library"
+      defaultVersion: "main"
+      implicit: true
+      allowVersionOverride: true
+      includeInChangesets: true
+      retriever:
+        modernSCM:
+          scm:
+            git:
+              remote: "${SHARED_LIBRARY_REPO}"
+              credentialsId: "github-token"
+    - name: "utils-library"
+      defaultVersion: "main"
+      implicit: false
+      allowVersionOverride: true
+      retriever:
+        modernSCM:
+          scm:
+            git:
+              remote: "${UTILS_LIBRARY_REPO}"
+              credentialsId: "github-token"
+
+credentials:
+  system:
+    domainCredentials:
+    - credentials:
+      - string:
+          scope: GLOBAL
+          id: "github-token"
+          secret: "${GITHUB_TOKEN}"
+          description: "GitHub Personal Access Token"
+      - basicSSHUserPrivateKey:
+          scope: GLOBAL
+          id: "git-ssh-key"
+          username: "git"
+          privateKeySource:
+            directEntry:
+              privateKey: "${GIT_SSH_PRIVATE_KEY}"
+          description: "Git SSH Private Key"
+
+jobs:
+  - script: >
+      folder('pipelines') {
+        description('Container for all pipeline jobs')
+      }
+      
+  - script: >
+      pipelineJob('pipelines/sample-cicd') {
+        description('Sample CI/CD Pipeline')
+        definition {
+          cps {
+            script(readFileFromWorkspace('pipeline-scripts/sample-cicd.groovy'))
+            sandbox()
+          }
+        }
+      }
