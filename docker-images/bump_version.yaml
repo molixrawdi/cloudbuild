@@ -1,0 +1,18 @@
+- id: 'Cleanup'''
+  name: 'ubuntu-latest'
+  entrypoint: 'bash'  
+  run: 
+       |
+          # Remove generated Dockerfile
+          rm Dockerfile.generated
+          
+          # Optionally, remove any temporary files or directories
+          echo "Cleanup completed."
+          
+  env:
+      REGISTRY: ghcr.io/my-org/my-repo
+      IMAGE_NAME: my-python-app
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      TRIGGER_NAME: my-cloud-build-trigger
+      REGION: us-central1

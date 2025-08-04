@@ -1,0 +1,8 @@
+# Patch version (0.1.0 → 0.1.1)
+bump2version patch
+
+# Minor version (0.1.1 → 0.2.0)
+bump2version minor
+
+# Major version (0.2.0 → 1.0.0)
+bump2version major

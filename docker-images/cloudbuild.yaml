@@ -1,0 +1,65 @@
+steps:
+  # Step 1: Setup Python and install bump2version
+  - name: 'python:3.9'
+    entrypoint: 'pip'
+    args: ['install', 'bump2version']
+    id: 'install-bump2version'
+
+  # Step 2: Increment version
+  - name: 'python:3.9'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Configure git
+        git config --global user.email "cloudbuild@example.com"
+        git config --global user.name "Cloud Build"
+        
+        # Determine version bump type (patch by default, or from trigger)
+        BUMP_TYPE=${_BUMP_TYPE:-patch}
+        
+        # Bump version
+        bump2version $BUMP_TYPE --no-tag --no-commit
+        
+        # Get the new version
+        NEW_VERSION=$(cat VERSION)
+        echo "New version: $NEW_VERSION"
+        
+        # Make version available to subsequent steps
+        echo $NEW_VERSION > /workspace/build_version.txt
+    id: 'bump-version'
+
+  # Step 3: Build Docker image with new version
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/myapp:$(cat /workspace/build_version.txt)'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/myapp:latest'
+      - '.'
+    id: 'build-image'
+
+  # Step 4: Push images
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '--all-tags', 'gcr.io/$PROJECT_ID/myapp']
+    id: 'push-image'
+
+  # Step 5: Commit version changes back to repo (optional)
+  - name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        git add .
+        git commit -m "Bump version to $(cat /workspace/build_version.txt) [skip ci]"
+        git tag "v$(cat /workspace/build_version.txt)"
+        git push origin main
+        git push origin "v$(cat /workspace/build_version.txt)"
+    id: 'commit-version'
+
+substitutions:
+  _BUMP_TYPE: 'patch'  # Can be overridden: patch, minor, major
+
+options:
+  logging: CLOUD_LOGGING_ONLY

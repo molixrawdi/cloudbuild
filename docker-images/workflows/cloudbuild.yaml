@@ -1,0 +1,63 @@
+name: Build and Version Docker Image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+        - patch
+        - minor
+        - major
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install bump2version
+      run: pip install bump2version
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Bump version
+      run: |
+        BUMP_TYPE=${{ github.event.inputs.bump_type || 'patch' }}
+        bump2version $BUMP_TYPE
+        NEW_VERSION=$(cat VERSION)
+        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+    - name: Build Docker image
+      run: |
+        docker build -t myapp:${{ env.NEW_VERSION }} -t myapp:latest .
+
+    - name: Push to registry
+      run: |
+        echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+        docker tag myapp:${{ env.NEW_VERSION }} username/myapp:${{ env.NEW_VERSION }}
+        docker tag myapp:latest username/myapp:latest
+        docker push username/myapp:${{ env.NEW_VERSION }}
+        docker push username/myapp:latest
+
+    - name: Push version changes
+      run: |
+        git push origin main
+        git push origin v${{ env.NEW_VERSION }}
