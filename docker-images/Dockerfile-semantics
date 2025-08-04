@@ -1,0 +1,30 @@
+FROM node:18-alpine
+
+# Accept build arguments
+ARG VERSION=0.0.0
+ARG BUILD_DATE
+ARG GIT_COMMIT
+
+# Add labels following OCI specification
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.title="MyApp" \
+      org.opencontainers.image.description="My application" \
+      org.opencontainers.image.vendor="My Company"
+
+# Make version available at runtime
+ENV APP_VERSION=${VERSION}
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+
+# Health check endpoint that includes version
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+EXPOSE 3000
+CMD ["npm", "start"]

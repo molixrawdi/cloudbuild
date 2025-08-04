@@ -1,0 +1,95 @@
+steps:
+  # Step 1: Analyze commits to determine version bump
+  - name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Get commit messages since last tag
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        COMMITS=$(git log ${LAST_TAG}..HEAD --oneline)
+        
+        # Determine bump type based on conventional commits
+        if echo "$COMMITS" | grep -q "BREAKING CHANGE\|^feat!:\|^fix!:"; then
+          echo "major" > /workspace/bump_type.txt
+        elif echo "$COMMITS" | grep -q "^feat:"; then
+          echo "minor" > /workspace/bump_type.txt
+        else
+          echo "patch" > /workspace/bump_type.txt
+        fi
+        
+        echo "Detected bump type: $(cat /workspace/bump_type.txt)"
+        echo "Recent commits:"
+        echo "$COMMITS"
+    id: 'analyze-commits'
+
+  # Step 2: Calculate new version
+  - name: 'python:3.9'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install semver
+        
+        # Get current version from git tags
+        CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        BUMP_TYPE=$(cat /workspace/bump_type.txt)
+        
+        # Calculate new version using Python semver
+        python3 << EOF
+        import semver
+        current = "$CURRENT_VERSION"
+        bump_type = "$BUMP_TYPE"
+        
+        try:
+            if bump_type == "major":
+                new_version = semver.bump_major(current)
+            elif bump_type == "minor":
+                new_version = semver.bump_minor(current)
+            else:
+                new_version = semver.bump_patch(current)
+        except ValueError:
+            # Handle invalid version format
+            new_version = "0.0.1"
+        
+        print(new_version)
+        with open('/workspace/new_version.txt', 'w') as f:
+            f.write(new_version)
+        EOF
+        
+        NEW_VERSION=$(cat /workspace/new_version.txt)
+        echo "Version: $CURRENT_VERSION → $NEW_VERSION"
+    id: 'calculate-version'
+
+  # Step 3: Build with semantic version
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'VERSION=$(cat /workspace/new_version.txt)'
+      - '--build-arg'
+      - 'BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")'
+      - '--build-arg'
+      - 'GIT_COMMIT=$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/myapp:$(cat /workspace/new_version.txt)'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/myapp:latest'
+      - '.'
+    id: 'build-image'
+
+  # Step 4: Create semantic version tag
+  - name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        NEW_VERSION=$(cat /workspace/new_version.txt)
+        git config --global user.email "cloudbuild@example.com"
+        git config --global user.name "Cloud Build"
+        git tag -a "v$NEW_VERSION" -m "Release version $NEW_VERSION"
+        git push origin "v$NEW_VERSION"
+    id: 'tag-version'
+
+substitutions:
+  _ENVIRONMENT: 'production'

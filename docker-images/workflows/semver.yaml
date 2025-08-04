@@ -1,0 +1,134 @@
+name: Semantic Version Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install semver tool
+      run: |
+        npm install -g semantic-release-cli
+        pip install semver
+
+    - name: Calculate semantic version
+      id: version
+      run: |
+        # Get the latest tag
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        echo "Latest tag: $LATEST_TAG"
+        
+        # Analyze commits for conventional commit patterns
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          # For PRs, create a pre-release version
+          PR_NUMBER=${{ github.event.number }}
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          VERSION="$LATEST_TAG-pr$PR_NUMBER.$COMMIT_SHORT"
+          TAG="pr-$PR_NUMBER"
+        else
+          # For main branch, determine semantic version
+          COMMITS=$(git log $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline)
+          
+          if echo "$COMMITS" | grep -qE "^[a-f0-9]+ (feat!|fix!|BREAKING CHANGE)"; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qE "^[a-f0-9]+ feat"; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          
+          # Calculate new version
+          VERSION=$(python3 -c "
+          import semver
+          current = '$LATEST_TAG'
+          try:
+              if '$BUMP' == 'major':
+                  print(semver.bump_major(current))
+              elif '$BUMP' == 'minor':
+                  print(semver.bump_minor(current))
+              else:
+                  print(semver.bump_patch(current))
+          except:
+              print('0.0.1')
+          ")
+          TAG="v$VERSION"
+        fi
+        
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Calculated version: $VERSION"
+
+  build:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=raw,value=${{ needs.version.outputs.version }}
+          type=raw,value=latest,enable={{is_default_branch}}
+        labels: |
+          org.opencontainers.image.version=${{ needs.version.outputs.version }}
+          org.opencontainers.image.revision=${{ github.sha }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          VERSION=${{ needs.version.outputs.version }}
+          BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          GIT_COMMIT=${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  tag:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Create Git tag
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git tag -a "${{ needs.version.outputs.tag }}" -m "Release ${{ needs.version.outputs.version }}"
+        git push origin "${{ needs.version.outputs.tag }}"

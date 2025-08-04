@@ -1,0 +1,58 @@
+# cloudbuild-multi-env.yaml
+steps:
+  - name: 'python:3.9'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install semver
+        
+        BRANCH_NAME=${BRANCH_NAME}
+        BASE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        BUILD_NUMBER=${BUILD_ID}
+        COMMIT_SHA=${SHORT_SHA}
+        
+        python3 << EOF
+        import semver
+        import os
+        
+        branch = os.environ.get('BRANCH_NAME', 'main')
+        base_version = os.environ.get('BASE_VERSION', '0.0.0')
+        build_number = os.environ.get('BUILD_NUMBER', '1')
+        commit_sha = os.environ.get('COMMIT_SHA', 'unknown')
+        
+        if branch == 'main':
+            # Production: semantic version
+            version = semver.bump_patch(base_version)
+        elif branch == 'develop':
+            # Staging: pre-release
+            version = f"{base_version}-rc.{build_number}"
+        elif branch.startswith('feature/'):
+            # Feature branch: development version
+            feature_name = branch.replace('feature/', '').replace('/', '-')
+            version = f"{base_version}-{feature_name}.{build_number}"
+        else:
+            # Other branches: snapshot
+            version = f"{base_version}-snapshot.{build_number}.{commit_sha}"
+        
+        print(version)
+        with open('/workspace/version.txt', 'w') as f:
+            f.write(version)
+        EOF
+        
+        VERSION=$(cat /workspace/version.txt)
+        echo "Generated version: $VERSION for branch: $BRANCH_NAME"
+    id: 'generate-version'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--label'
+      - 'version=$(cat /workspace/version.txt)'
+      - '--label'
+      - 'branch=${BRANCH_NAME}'
+      - '--label'
+      - 'build-id=${BUILD_ID}'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/myapp:$(cat /workspace/version.txt)'
+      - '.'
