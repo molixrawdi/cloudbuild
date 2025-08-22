@@ -1,63 +1,129 @@
-name: Build and Version Docker Image
 
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      bump_type:
-        description: 'Version bump type'
-        required: true
-        default: 'patch'
-        type: choice
-        options:
-        - patch
-        - minor
-        - major
+steps:
+- id: 'Build and Version Docker Image'
+  name: 'hub.docker.com/morawi-za/ubuntu-22.04'
+  description: 'Builds and versions a Docker image, pushing it to a Docker registry.'
+  version: '1.0.0'
+  
+  on:
+     push:
+     branches: [main]
+     workflow_dispatch:
+     inputs:
+     bump_type:
+     description: 'Version bump type'
+     required: true
+     default: 'patch'
+     type: choice
+     options:
+      - patch
+      - minor
+      - major
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-
-    - name: Install bump2version
-      run: pip install bump2version
-
-    - name: Configure Git
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-
-    - name: Bump version
-      run: |
-        BUMP_TYPE=${{ github.event.inputs.bump_type || 'patch' }}
-        bump2version $BUMP_TYPE
-        NEW_VERSION=$(cat VERSION)
-        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-
-    - name: Build Docker image
-      run: |
-        docker build -t myapp:${{ env.NEW_VERSION }} -t myapp:latest .
-
-    - name: Push to registry
-      run: |
-        echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
-        docker tag myapp:${{ env.NEW_VERSION }} username/myapp:${{ env.NEW_VERSION }}
-        docker tag myapp:latest username/myapp:latest
-        docker push username/myapp:${{ env.NEW_VERSION }}
-        docker push username/myapp:latest
-
-    - name: Push version changes
-      run: |
-        git push origin main
-        git push origin v${{ env.NEW_VERSION }}
+  jobs:
+  - name: 'Set up Docker Buildx'
+    uses: docker/setup-buildx-action@v2
+    with:
+      install: true
+      version: latest
+      driver-opts: image=moby/buildkit:master
+      buildkitd-flags: --debug
+      outputs: type=docker
+      timeout: 5m
+  - name: 'Log in to Docker Hub'
+    uses: docker/login-action@v2
+    with:
+      registry: docker.io
+      username: ${{ secrets.DOCKER_USERNAME }}
+      password: ${{ secrets.DOCKER_PASSWORD }}
+  - name: 'Bump Version and Push Tag'
+    id: bump_version
+    uses: anothrNick/github-tag-action@v1.37.0
+    with:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+      tag_prefix: 'dev'
+      release_branches: 'main'
+      bump_type: ${{ github.event.inputs.bump_type }}
+  - name: 'Build and Push Docker Image'
+    uses: docker/build-push-action@v4
+    with:
+      context: .
+      push: true
+      tags: |
+        docker.io/morawi-za/ubuntu-22.04:latest
+        docker.io/morawi-za/ubuntu-22.04:${{ steps.bump_version .outputs.new_tag }}
+      build-args: |
+        VERSION=${{ steps.bump_version.outputs.new_tag }}
+  - name: 'Verify Docker Image'
+    run: |
+      docker run --rm docker.io/morawi-za/ubuntu-22.04:${ { steps.bump_version.outputs.new_tag }} lsb_release -a
+      docker run --rm docker.io/morawi-za/ubuntu-22.04:${ { steps.bump_version.outputs.new_tag }} cat /etc/os-release
+  - name: 'Create GitHub Release'
+    uses: ncipollo/release-action@v1
+    with:
+      tag: ${{ steps.bump_version.outputs.new_tag }}
+      name: Release ${{ steps.bump_version.outputs.new_tag }}
+      body: |
+        ## Changes in this release:
+        - Bumped version to ${{ steps.bump_version.outputs.new_tag }}
+        - Built and pushed Docker image to Docker Hub
+      draft: false
+      prerelease: false
+      token: ${{ secrets.GITHUB_TOKEN }}
+  - name: 'Notify on Slack'
+    uses: 8398a7/action-slack@v3
+    with:
+      status: ${{ job.status }}
+      fields: repo,commit,author,ref,workflow,job,took
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      SLACK_USERNAME: 'github-actions'
+      SLACK_ICON_EMOJI: ':docker:'
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DEFAULT_COLOR: '#36a64f'
+      SUCCESS_COLOR: '#36a64f'
+      FAILURE_COLOR: '#ff0000'
+      CANCELLED_COLOR: '#ffa500'
+      NEUTRAL_COLOR: '#cccccc'
+      CUSTOM_PAYLOAD: |
+        {
+          "attachments": [
+            {
+              "fallback": "New Docker image version ${{ steps.bump_version.outputs.new_tag }} has been pushed to Docker Hub.",
+              "color": "#36a64f",
+              "pretext": "New Docker image version ${{ steps.bump_version.outputs.new_tag }} has been pushed to Docker Hub.",
+              "title": "View Release on GitHub",
+              "title_link": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.bump_version.outputs.new_tag }}",
+              "text": "Docker image tags:\n- latest\n- ${{ steps.bump_version.outputs.new_tag }}",
+              "footer": "GitHub Actions",
+              "ts": "$(date +%s)"
+            }
+          ]
+        }
+  - name: 'Cleanup Local Docker Images'
+    run: |
+      docker image prune -f
+      docker system prune -f
+      docker builder prune -f
+      docker volume prune -f
+      docker network prune -f
+      docker container prune -f
+      docker image ls -a
+      docker system df
+      docker builder ls
+      docker volume ls
+      docker network ls
+      docker container ls -a
+      df -h      
+      free -h
+      top -n 1 -b
+      uname -a
+      lsb_release -a
+      cat /etc/os-release
+      docker run --rm docker.io/morawi-za/ubuntu-22.04:${ { steps.bump_version.outputs.new_tag }} lsb_release -a
+      docker run --rm docker.io/morawi-za/ubuntu-22.04:${ { steps.bump_version.outputs.new_tag }} cat /etc/os-release
+      docker run --rm docker.io/morawi-za/ubuntu-22.04:latest lsb_release -a
+      docker run --rm docker.io/morawi-za/ubuntu-22.04: latest cat /etc/os-release
+      docker run --rm docker.io/morawi-za/ubuntu-22.04:${ { steps.bump_version.outputs.new_tag }} echo "Hello, World!"
+      docker run --rm docker.io/morawi-za/ubuntu-22.04: latest echo "Hello, World!"
+      
