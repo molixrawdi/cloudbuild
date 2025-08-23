@@ -1,0 +1,296 @@
+# Jenkins Pipeline Configuration
+# Uses shared library 'test-rx' with structured jobs, pipelines, and vars
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-pipeline-config
+  namespace: jenkins
+data:
+  Jenkinsfile: |
+    @Library('test-rx') _
+    
+    pipeline {
+        agent any
+        
+        options {
+            buildDiscarder(logRotator(numToKeepStr: '10'))
+            timeout(time: 1, unit: 'HOURS')
+            timestamps()
+        }
+        
+        environment {
+            // Environment variables from shared library vars
+            BUILD_CONFIG = "${vars.buildConfig}"
+            DEPLOY_ENV = "${vars.deployEnvironment}"
+            NOTIFICATION_CHANNEL = "${vars.slackChannel}"
+        }
+        
+        parameters {
+            choice(
+                name: 'ENVIRONMENT',
+                choices: ['dev', 'staging', 'prod'],
+                description: 'Target deployment environment'
+            )
+            booleanParam(
+                name: 'SKIP_TESTS',
+                defaultValue: false,
+                description: 'Skip test execution'
+            )
+        }
+        
+        stages {
+            stage('Initialize') {
+                steps {
+                    script {
+                        // Using shared library structured job
+                        structuredJobs.initialize([
+                            environment: params.ENVIRONMENT,
+                            skipTests: params.SKIP_TESTS,
+                            buildNumber: env.BUILD_NUMBER
+                        ])
+                    }
+                }
+            }
+            
+            stage('Code Quality') {
+                parallel {
+                    stage('Lint') {
+                        steps {
+                            script {
+                                structuredJobs.runLinting([
+                                    language: 'javascript',
+                                    configFile: '.eslintrc.js'
+                                ])
+                            }
+                        }
+                    }
+                    stage('Security Scan') {
+                        steps {
+                            script {
+                                structuredJobs.runSecurityScan([
+                                    scanType: 'dependency',
+                                    reportFormat: 'json'
+                                ])
+                            }
+                        }
+                    }
+                }
+            }
+            
+            stage('Build') {
+                steps {
+                    script {
+                        // Using pipeline utilities from shared library
+                        pipelines.buildApplication([
+                            buildTool: 'npm',
+                            dockerImage: true,
+                            artifactRegistry: vars.artifactRegistry
+                        ])
+                    }
+                }
+                post {
+                    always {
+                        archiveArtifacts artifacts: 'dist/**/*', fingerprint: true
+                    }
+                }
+            }
+            
+            stage('Test') {
+                when {
+                    not { params.SKIP_TESTS }
+                }
+                parallel {
+                    stage('Unit Tests') {
+                        steps {
+                            script {
+                                structuredJobs.runTests([
+                                    testType: 'unit',
+                                    coverage: true,
+                                    reportPath: 'coverage/lcov.info'
+                                ])
+                            }
+                        }
+                    }
+                    stage('Integration Tests') {
+                        steps {
+                            script {
+                                structuredJobs.runTests([
+                                    testType: 'integration',
+                                    environment: 'test',
+                                    timeout: 300
+                                ])
+                            }
+                        }
+                    }
+                    stage('E2E Tests') {
+                        when {
+                            anyOf {
+                                branch 'main'
+                                branch 'develop'
+                            }
+                        }
+                        steps {
+                            script {
+                                structuredJobs.runTests([
+                                    testType: 'e2e',
+                                    browser: 'chrome',
+                                    headless: true
+                                ])
+                            }
+                        }
+                    }
+                }
+                post {
+                    always {
+                        publishTestResults testResultsPattern: 'test-results/*.xml'
+                        publishCoverage adapters: [
+                            istanbulCoberturaAdapter('coverage/cobertura-coverage.xml')
+                        ]
+                    }
+                }
+            }
+            
+            stage('Deploy') {
+                when {
+                    anyOf {
+                        branch 'main'
+                        branch 'develop'
+                    }
+                }
+                steps {
+                    script {
+                        // Using pipeline deployment utilities
+                        pipelines.deployApplication([
+                            environment: params.ENVIRONMENT,
+                            strategy: 'blue-green',
+                            healthCheck: true,
+                            rollbackOnFailure: true,
+                            approvalRequired: params.ENVIRONMENT == 'prod'
+                        ])
+                    }
+                }
+            }
+            
+            stage('Post-Deploy Validation') {
+                when {
+                    anyOf {
+                        branch 'main'
+                        branch 'develop'
+                    }
+                }
+                steps {
+                    script {
+                        structuredJobs.validateDeployment([
+                            environment: params.ENVIRONMENT,
+                            healthEndpoint: vars.healthCheckUrl,
+                            smokeTests: true
+                        ])
+                    }
+                }
+            }
+        }
+        
+        post {
+            always {
+                script {
+                    // Using shared library notification utilities
+                    pipelines.sendNotification([
+                        channel: env.NOTIFICATION_CHANNEL,
+                        status: currentBuild.result ?: 'SUCCESS',
+                        buildInfo: [
+                            jobName: env.JOB_NAME,
+                            buildNumber: env.BUILD_NUMBER,
+                            branch: env.BRANCH_NAME,
+                            environment: params.ENVIRONMENT
+                        ]
+                    ])
+                }
+                
+                // Cleanup workspace
+                cleanWs()
+            }
+            success {
+                script {
+                    if (params.ENVIRONMENT == 'prod') {
+                        pipelines.tagRelease([
+                            version: vars.releaseVersion,
+                            repository: vars.gitRepository
+                        ])
+                    }
+                }
+            }
+            failure {
+                script {
+                    pipelines.handleFailure([
+                        rollback: params.ENVIRONMENT != 'dev',
+                        createJiraTicket: true,
+                        assignee: vars.teamLead
+                    ])
+                }
+            }
+        }
+    }
+
+---
+# Shared Library Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-shared-library-config
+  namespace: jenkins
+data:
+  shared-library.yaml: |
+    libraries:
+      - name: test-rx
+        retrieval:
+          scm:
+            git:
+              remote: https://github.com/your-org/jenkins-shared-library-test-rx.git
+              credentialsId: github-credentials
+        defaultVersion: main
+        allowVersionOverride: true
+        includeInChangeLog: false
+        
+    # Global Pipeline Libraries Configuration
+    globalPipelineLibraries:
+      - name: test-rx
+        implicit: true
+        allowVersionOverride: true
+        
+    # Structured Jobs Configuration
+    structuredJobs:
+      templates:
+        - name: build-template
+          path: jobs/build.groovy
+        - name: test-template  
+          path: jobs/test.groovy
+        - name: deploy-template
+          path: jobs/deploy.groovy
+          
+    # Pipeline Utilities Configuration  
+    pipelines:
+      defaultAgent: any
+      sharedSteps:
+        - initialization
+        - cleanup
+        - notification
+        
+    # Variables Configuration
+    vars:
+      global:
+        artifactRegistry: "your-registry.com"
+        slackChannel: "#ci-cd-notifications" 
+        healthCheckUrl: "https://api.yourapp.com/health"
+        gitRepository: "https://github.com/your-org/your-app.git"
+        teamLead: "team-lead@company.com"
+      environment:
+        dev:
+          deployEnvironment: "development"
+          buildConfig: "debug"
+        staging:
+          deployEnvironment: "staging" 
+          buildConfig: "release"
+        prod:
+          deployEnvironment: "production"
+          buildConfig: "release"
