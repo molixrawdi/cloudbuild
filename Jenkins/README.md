@@ -608,5 +608,3 @@ your-project/
 
 # Pipeline scripts (if stored in Jenkins)
 /root/.jenkins/jobs/<job-name>/builds/
-
-
