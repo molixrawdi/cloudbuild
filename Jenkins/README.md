@@ -553,3 +553,24 @@ Might not work for productions.
 Include @Library changes in job recent change.
 
 Select modern scm, to then select git.
+
+To run jenkins from command line with jar file one can use the command below:</p>
+
+```
+
+  # Create a pipeline job
+  java -jar jenkins-cli.jar -s http://localhost:8080/ create-job your-job-name < job-config.xml
+
+```
+
+### The structure of the :</p>
+
+tbase01/
+├── src
+│   └── org
+│       └── example
+│           └── tbase01
+│               └── Steps.groovy   // <-- your Groovy file
+├── vars
+│   └── greet.groovy              // <-- a global variable (step)
+└── resources

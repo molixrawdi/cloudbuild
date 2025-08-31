@@ -1,0 +1,72 @@
+// ────────────────────────────────────────────────────────────────────────────────
+//   Jenkinsfile – load two shared libraries (tbase01 & tbase02)
+// ────────────────────────────────────────────────────────────────────────────────
+@Library('tbase01@master') _    // load tbase01, use its default branch (master)
+// ────────────────────────────────────────────────────────────────────────────────
+@Library('tbase02@master') _    // load tbase02, use its default branch (master)
+
+pipeline {
+    agent any
+
+    // optional: keep the pipeline state in the workspace
+    options {
+        timestamps()          // prepend timestamps to console output
+        preserveStashes()     // keep stashes across stages
+        skipDefaultCheckout() // we will check out only what we need
+    }
+
+    stages {
+
+        // -----------------------------------------------------------------------
+        stage('Checkout code (if you need it)') {
+            steps {
+                // OPTIONAL: clone the main repo you’re building, if any
+                // (you can remove this block if your job only needs the libs)
+                git branch: 'main',
+                    url: 'git@github.com:your-org/your-repo.git'
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        stage('Use tbase01') {
+            steps {
+                script {
+                    // Call a helper function that lives in the tbase01 library.
+                    //   * It could be a reusable step, a Groovy script, etc.
+                    //   * The function name is defined in the library’s src/
+                    //     (e.g., src/org/example/tbase01/Steps.groovy)
+                    tbase01.greet('Hello from tbase01!')
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        stage('Use tbase02') {
+            steps {
+                script {
+                    // Call a helper function from the tbase02 library.
+                    tbase02.buildAndDeploy('my-service')
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        stage('Post‑processing') {
+            steps {
+                echo 'All steps finished!'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline succeeded.'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
+        always {
+            cleanWs()   // clean up the workspace
+        }
+    }
+}
