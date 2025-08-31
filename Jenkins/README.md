@@ -582,3 +582,31 @@ your-project/
 ├── Jenkinsfile
 ├── jenkins.yaml  # or .jenkins.yml
 └── other-files...
+
+
+## Jenkins-File 
+
+
+# Option A: In your source code repository (Recommended)
+/path/to/your/project/Jenkinsfile
+
+# Option B: In Jenkins workspace
+/root/.jenkins/workspace/<job-name>/Jenkinsfile
+
+# Option C: Custom location specified in job config
+/root/.jenkins/pipelines/Jenkinsfile
+
+
+
+### Jenkins-Config-File
+
+# Main Jenkins configuration
+/root/.jenkins/config.xml
+
+# Job configurations
+/root/.jenkins/jobs/<job-name>/config.xml
+
+# Pipeline scripts (if stored in Jenkins)
+/root/.jenkins/jobs/<job-name>/builds/
+
+
