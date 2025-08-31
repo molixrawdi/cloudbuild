@@ -574,3 +574,11 @@ tbase01/
 ├── vars
 │   └── greet.groovy              // <-- a global variable (step)
 └── resources
+
+
+## Structure
+
+your-project/
+├── Jenkinsfile
+├── jenkins.yaml  # or .jenkins.yml
+└── other-files...
