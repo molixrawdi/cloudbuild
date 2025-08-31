@@ -608,3 +608,126 @@ your-project/
 
 # Pipeline scripts (if stored in Jenkins)
 /root/.jenkins/jobs/<job-name>/builds/
+
+## Project Structure:
+
+/Users/mr6826/Downloads/Atom-General-Holder/ATOM/cortexica-atombkup-p-2025/cto-devops-atom-infra/
+├── cortexica-atombkup-p/
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── terraform.tfvars
+│   └── ci-cd/
+│       ├── Jenkinsfile                 # Pipeline definition
+│       ├── jenkins.yaml               # Jenkins as Code config
+│       └── deploy-scripts/
+│           ├── terraform-plan.sh
+│           └── terraform-apply.sh
+
+
+## jenkinsfile
+
+
+### Jenkins-File
+
+
+pipeline {
+    agent any
+
+    environment {
+        GOOGLE_APPLICATION_CREDENTIALS = '/root/.jenkins/sa-cortexica-atombkup-p-e870ed6bf361-key.json'
+        TF_VAR_project = 'cortexica-atombkup-p'
+        TF_VAR_region = 'europe-west1'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+
+            }
+
+        stage('Terraform Init') {
+            steps {
+                dir('cortexica-atombkup-p') {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                dir('cortexica-atombkup-p') {
+                    sh 'terraform plan -out=tfplan'
+                }
+            }
+        }
+
+        stage('Terraform Apply') {
+            when {
+                branch 'main'
+            }
+            steps {
+                dir('cortexica-atombkup-p') {
+                    sh 'terraform apply tfplan'
+                }
+            }
+        }
+    }
+
+    post {                                                                                                                                                                                                                                                                             
+        always {                                                                                                                                                                                                                                                                       
+            cleanWs()                                                                                                                                                                                                                                                                  
+        }                                                                                                                                                                                                                                                                              
+    }                                                                                                                                                                                                                                                                                  
+}                                                                                                                                                                                                                                                                                      
+
+
+### Jenkins.yaml                                                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                                       
+jenkins:                                                                                                                                                                                                                                                                               
+  systemMessage: "Cortexica Atom Backup Infrastructure CI/CD"                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                                                       
+credentials:                                                                                                                                                                                                                                                                           
+  system:                                                                                                                                                                                                                                                                              
+    domainCredentials:                                                                                                                                                                                                                                                                 
+      - credentials:                                                                                                                                                                                                                                                                   
+          - file:                                                                                                                                                                                                                                                                      
+              scope: GLOBAL                                                                                                                                                                                                                                                            
+              id: "gcp-service-account"                                                                                                                                                                                                                                                
+              filename: "sa-cortexica-atombkup-p-e870ed6bf361-key.json"                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                       
+jobs:                                                                                                                                                                                                                                                                                  
+  - script: >                                                                                                                                                                                                                                                                          
+      pipelineJob('cortexica-atombkup-p-terraform') {                                                                                                                                                                                                                                  
+        definition {                                                                                                                                                                                                                                                                   
+          cpsScm {                                                                                                                                                                                                                                                                     
+            scm {                                                                                                                                                                                                                                                                      
+              git {                                                                                                                                                                                                                                                                    
+                remote {                                                                                                                                                                                                                                                               
+                  url('https://github.com/your-org/cto-devops-atom-infra.git')                                                                                                                                                                                                         
+                }                                                                                                                                                                                                                                                                      
+                branch('*/main')                                                                                                                                                                                                                                                       
+              }                                                                                                                                                                                                                                                                        
+            }                                                                                                                                                                                                                                                                          
+            scriptPath('cortexica-atombkup-p/ci-cd/Jenkinsfile')                                                                                                                                                                                                                       
+          }                                                                                                                                                                                                                                                                            
+        }                                                                                                                                                                                                                                                                              
+      }                       
+
+### File placement                                                                                                                                                                                                                                                                     
+                                                                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                                       
+# Copy service account key to Jenkins                                                                                                                                                                                                                                                  
+sudo cp sa-cortexica-atombkup-p-e870ed6bf361-key.json /root/.jenkins/                                                                                                                                                                                                                  
+                                                                                                                                                                                                                                                                                       
+# Create CI/CD directory structure                                                                                                                                                                                                                                                     
+mkdir -p cortexica-atombkup-p/ci-cd                                                                                                                                                                                                                                                    
+touch cortexica-atombkup-p/ci-cd/Jenkinsfile                                                                                                                                                                                                                                           
+touch cortexica-atombkup-p/ci-cd/jenkins.yaml                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                                                       
+# Set proper permissions                                                                                                                                                                                                                                                               
+sudo chown jenkins:jenkins /root/.jenkins/sa-cortexica-atombkup-p-e870ed6bf361-key.json                                                                                                                                                                                                
+sudo chmod 600 /root/.jenkins/sa-cortexica-atombkup-p-e870ed6bf361-key.json       
+
