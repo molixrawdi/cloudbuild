@@ -1,5 +1,6 @@
 # These are the most important plugings I installed on test Jenkins
 
+```
 
 Preparation	
 Checking internet connectivity
@@ -54,7 +55,7 @@ Libvirt Agents	 Success
 AWS Codebuild Cloud	 Success
 Loading plugin extensions	 Success
 Go back to the top pages
-
+```
 
 ### To install the plugins using the cli
 
@@ -74,9 +75,9 @@ java -jar jenkins-cli.jar -s http://<Jenkins-server-url-or-ip> list-plugins --us
 ```
 
 Select the plugin needed from:
-
+```
 https://updates.jenkins-ci.org/downloads/plugins
-
+```
 
 ## Agents
 
@@ -85,7 +86,6 @@ Agent Types
 any - Runs on any available agent in the Jenkins environment. This is the most flexible option but gives you no control over the execution environment.
 none - No global agent is allocated for the pipeline. Each stage must define its own agent. This is useful when different stages need different execution environments.
 label - Runs on agents with specific labels. You can target agents based on their capabilities, operating system, or other characteristics:
-
 
 ```
 agent { label 'linux && docker' }
@@ -100,11 +100,8 @@ agent {
         customWorkspace '/custom/path'
     }
 }
+```### Docker
 ```
-### Docker
-
-```
-
 agent { 
     docker {
         image 'maven:3.8.1-adoptopenjdk-11'
@@ -138,6 +135,8 @@ agent {
 }
 
 ```
+
+
 Pipeline Structure Options
 pipeline - The root block that defines a declarative pipeline
 agent - Specifies where the pipeline or stage will run
@@ -489,9 +488,6 @@ Ensure proper proxy configuration if applicable
 Use the web interface for initial setup when possible
 
 The most common cause is browser-related, so try Solution 3 first. If you're using automation or API calls, Solution 2 or 7 will be most helpful.RetryClaude does not have the ability to run the code it generates yet.Claude can make mistakes. Please double-check responses. Sonnet 4
-
-
-
 ```
 # Download Jenkins CLI
 wget http://your-jenkins-url/jnlpJars/jenkins-cli.jar
@@ -731,3 +727,77 @@ touch cortexica-atombkup-p/ci-cd/jenkins.yaml
 sudo chown jenkins:jenkins /root/.jenkins/sa-cortexica-atombkup-p-e870ed6bf361-key.json                                                                                                                                                                                                
 sudo chmod 600 /root/.jenkins/sa-cortexica-atombkup-p-e870ed6bf361-key.json       
 
+
+
+How to setup jenkins_home:
+
+# Set temporarily
+export JENKINS_HOME=/path/to/your/jenkins/home
+
+# Set permanently in ~/.bashrc or ~/.profile
+echo 'export JENKINS_HOME=/path/to/your/jenkins/home' >> ~/.bashrc
+source ~/.bashrc
+
+
+# using system property:
+
+java -Djenkins.model.Jenkins.slaveAgentPort=-1 -Dhudson.model.DirectoryBrowserSupport.CSP= -Djenkins.install.runSetupWizard=false -DJENKINS_HOME=/path/to/jenkins/home -jar jenkins.war
+
+
+
+#### Docker setup:
+
+# Create a volume for Jenkins home
+docker volume create jenkins_home
+
+# Run Jenkins with custom home directory
+docker run -d \
+  --name jenkins \
+  -p 8080:8080 \
+  -p 50000:50000 \
+  -v jenkins_home:/var/jenkins_home \
+  jenkins/jenkins:lts
+
+## system edit:
+
+```
+sudo systemctl edit Jenkins
+
+```
+
+```
+[Service]
+Environment="JENKINS_HOME=/path/to/your/jenkins/home"
+```
+
+```
+  sudo systemctl daemon-reload
+  sudo systemctl restart Jenkins
+```
+
+
+### web-xml
+```
+
+<env-entry>
+    <env-entry-name>JENKINS_HOME</env-entry-name>
+    <env-entry-value>/path/to/your/jenkins/home</env-entry-value>
+    <env-entry-type>java.lang.String</env-entry-type>
+</env-entry>
+```
+
+
+```
+sudo chown -R jenkins:jenkins /path/to/jenkins/home
+sudo chmod -R 755 /path/to/jenkins/home
+```
+
+## Directory Structure: Jenkins will create its directory structure automatically, including:
+
+```
+jobs/ - Job configurations
+workspace/ - Build workspaces
+plugins/ - Installed plugins
+users/ - User data
+
+```
