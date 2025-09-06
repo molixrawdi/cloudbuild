@@ -741,7 +741,7 @@ source ~/.bashrc
 
 # using system property:
 
-java -Djenkins.model.Jenkins.slaveAgentPort=-1 -Dhudson.model.DirectoryBrowserSupport.CSP=self -Djenkins.install.runSetupWizard=false -DJENKINS_HOME=/path/to/jenkins/home -jar /path/to/jenkins.war
+java -Djenkins.model.Jenkins.slaveAgentPort=-1 -Dhudson.model.DirectoryBrowserSupport.CSP=self -Djenkins.install.runSetupWizard=false -DJENKINS_HOME=/path/to/jenkins/home -jar /path/to/jenkins.war --httpListenAddress=172.21.189.3 --httpPort=8080
 
 
 
