@@ -1,0 +1,450 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.42">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.9.3"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.9.3">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description>Pipeline that detects existing Docker images by shortSha and conditionally builds or deploys using Google Cloud Deploy</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>GIT_BRANCH</name>
+          <description>Git branch to build</description>
+          <defaultValue>main</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GCP_PROJECT_ID</name>
+          <description>Google Cloud Project ID</description>
+          <defaultValue>my-gcp-project</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GCP_REGION</name>
+          <description>Google Cloud Region</description>
+          <defaultValue>us-central1</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DEPLOY_TARGET</name>
+          <description>Google Cloud Deploy target</description>
+          <defaultValue>staging</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>FORCE_BUILD</name>
+          <description>Force build even if image exists</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers>
+        <hudson.triggers.SCMTrigger>
+          <spec>H/5 * * * *</spec>
+          <ignorePostCommitHooks>false</ignorePostCommitHooks>
+        </hudson.triggers.SCMTrigger>
+      </triggers>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+    <hudson.plugins.buildblocker.BuildBlockerProperty plugin="build-blocker-plugin@1.7.8">
+      <useBuildBlocker>false</useBuildBlocker>
+      <blockLevel>GLOBAL</blockLevel>
+      <scanQueueFor>DISABLED</scanQueueFor>
+      <blockingJobs></blockingJobs>
+    </hudson.plugins.buildblocker.BuildBlockerProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.92">
+    <script>pipeline {
+    agent {
+        label 'docker'
+    }
+    
+    parameters {
+        string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Git branch to build')
+        string(name: 'GCP_PROJECT_ID', defaultValue: 'my-gcp-project', description: 'Google Cloud Project ID')
+        string(name: 'GCP_REGION', defaultValue: 'us-central1', description: 'Google Cloud Region')
+        string(name: 'DEPLOY_TARGET', defaultValue: 'staging', description: 'Google Cloud Deploy target')
+        booleanParam(name: 'FORCE_BUILD', defaultValue: false, description: 'Force build even if image exists')
+    }
+    
+    environment {
+        DOCKER_REGISTRY = 'hub.docker.com'
+        IMAGE_REPO = 'tfdk/pyfront-end'
+        FULL_IMAGE_NAME = "${DOCKER_REGISTRY}/${IMAGE_REPO}"
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
+        GCP_SERVICE_ACCOUNT = credentials('gcp-service-account')
+        shortSha = ''
+        imageExists = false
+        availableTags = ''
+    }
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20', daysToKeepStr: '30'))
+        timeout(time: 45, unit: 'MINUTES')
+        timestamps()
+        ansiColor('xterm')
+        skipDefaultCheckout(true)
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    checkout scm
+                    // Get short SHA from current commit
+                    shortSha = sh(
+                        script: "git rev-parse --short=7 HEAD",
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "Current commit shortSha: ${shortSha}"
+                    env.SHORT_SHA = shortSha
+                    env.IMAGE_TAG = "${FULL_IMAGE_NAME}:${shortSha}"
+                }
+            }
+        }
+        
+        stage('Check Existing Images') {
+            steps {
+                script {
+                    echo "🔍 Checking for existing images with shortSha: ${shortSha}"
+                    
+                    try {
+                        // Login to Docker Hub to check for existing images
+                        sh """
+                            echo \$DOCKERHUB_CREDENTIALS_PSW | docker login -u \$DOCKERHUB_CREDENTIALS_USR --password-stdin
+                        """
+                        
+                        // Get all available tags for the repository
+                        def tagsOutput = sh(
+                            script: """
+                                curl -s "https://registry.hub.docker.com/v2/repositories/${IMAGE_REPO}/tags/" | \
+                                jq -r '.results[].name' | head -20
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        
+                        availableTags = tagsOutput
+                        echo "📋 Available image tags:"
+                        echo "${availableTags}"
+                        
+                        // Check if our shortSha tag exists
+                        def tagExists = sh(
+                            script: """
+                                curl -s "https://registry.hub.docker.com/v2/repositories/${IMAGE_REPO}/tags/${shortSha}/" | \
+                                jq -r '.name // "null"'
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (tagExists != "null" && tagExists == shortSha) {
+                            imageExists = true
+                            env.IMAGE_EXISTS = "true"
+                            echo "✅ Image ${IMAGE_TAG} already exists!"
+                        } else {
+                            imageExists = false
+                            env.IMAGE_EXISTS = "false"
+                            echo "❌ Image ${IMAGE_TAG} does not exist"
+                        }
+                        
+                    } catch (Exception e) {
+                        echo "⚠️  Error checking image existence: ${e.getMessage()}"
+                        echo "Proceeding with build assumption..."
+                        imageExists = false
+                        env.IMAGE_EXISTS = "false"
+                    }
+                }
+            }
+        }
+        
+        stage('List All Matching Images') {
+            when {
+                expression { imageExists == true }
+            }
+            steps {
+                script {
+                    echo "📦 Found existing image with shortSha: ${shortSha}"
+                    echo "🏷️  All available tags for ${IMAGE_REPO}:"
+                    
+                    // List all tags that might match shortSha pattern
+                    sh """
+                        echo "Current shortSha: ${shortSha}"
+                        echo "Image that will be used: ${IMAGE_TAG}"
+                        echo ""
+                        echo "All available tags:"
+                        echo "${availableTags}"
+                        echo ""
+                        echo "Tags matching shortSha pattern (7 chars):"
+                        echo "${availableTags}" | grep -E '^[a-f0-9]{7}\$' || echo "No matching shortSha pattern tags found"
+                    """
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            when {
+                anyOf {
+                    expression { imageExists == false }
+                    expression { params.FORCE_BUILD == true }
+                }
+            }
+            steps {
+                script {
+                    if (params.FORCE_BUILD && imageExists) {
+                        echo "🔨 Force building image even though ${IMAGE_TAG} exists"
+                    } else {
+                        echo "🔨 Building new image ${IMAGE_TAG}"
+                    }
+                    
+                    // Build the Docker image
+                    sh """
+                        echo "Building Docker image..."
+                        docker build -t ${IMAGE_TAG} .
+                        
+                        echo "Pushing image to registry..."
+                        docker push ${IMAGE_TAG}
+                        
+                        echo "Image built and pushed: ${IMAGE_TAG}"
+                    """
+                }
+            }
+            post {
+                always {
+                    sh """
+                        # Cleanup local images
+                        docker rmi ${IMAGE_TAG} || true
+                        docker system prune -f || true
+                    """
+                }
+            }
+        }
+        
+        stage('Setup Google Cloud') {
+            steps {
+                script {
+                    echo "🌐 Setting up Google Cloud authentication"
+                    
+                    sh """
+                        # Authenticate with Google Cloud using service account
+                        echo '\$GCP_SERVICE_ACCOUNT' | base64 -d > /tmp/gcp-key.json
+                        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+                        gcloud config set project ${params.GCP_PROJECT_ID}
+                        
+                        # Install Google Cloud Deploy if not available
+                        if ! command -v gcloud deploy &> /dev/null; then
+                            echo "Installing Google Cloud Deploy components..."
+                            gcloud components install deploy --quiet
+                        fi
+                        
+                        echo "Google Cloud setup complete"
+                    """
+                }
+            }
+        }
+        
+        stage('Deploy with Google Cloud Deploy') {
+            steps {
+                script {
+                    echo "🚀 Deploying ${IMAGE_TAG} using Google Cloud Deploy"
+                    
+                    sh """
+                        # Create deployment configuration if it doesn't exist
+                        if [ ! -f "clouddeploy.yaml" ]; then
+                            echo "Creating clouddeploy.yaml configuration..."
+                            cat > clouddeploy.yaml << EOF
+apiVersion: deploy.cloud.google.com/v1
+kind: DeliveryPipeline
+metadata:
+  name: pyfront-end-pipeline
+spec:
+  projectId: ${params.GCP_PROJECT_ID}
+  location: ${params.GCP_REGION}
+  targets:
+  - name: ${params.DEPLOY_TARGET}
+    gke:
+      cluster: projects/${params.GCP_PROJECT_ID}/locations/${params.GCP_REGION}/clusters/my-cluster
+EOF
+                        fi
+                        
+                        # Create skaffold.yaml for deployment
+                        if [ ! -f "skaffold.yaml" ]; then
+                            echo "Creating skaffold.yaml configuration..."
+                            cat > skaffold.yaml << EOF
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: pyfront-end
+manifests:
+  rawYaml:
+  - k8s-deployment.yaml
+build:
+  artifacts:
+  - image: ${FULL_IMAGE_NAME}
+    docker:
+      dockerfile: Dockerfile
+EOF
+                        fi
+                        
+                        # Create Kubernetes deployment manifest
+                        if [ ! -f "k8s-deployment.yaml" ]; then
+                            echo "Creating Kubernetes deployment manifest..."
+                            cat > k8s-deployment.yaml << EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pyfront-end
+  labels:
+    app: pyfront-end
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pyfront-end
+  template:
+    metadata:
+      labels:
+        app: pyfront-end
+    spec:
+      containers:
+      - name: pyfront-end
+        image: ${IMAGE_TAG}
+        ports:
+        - containerPort: 8080
+        env:
+        - name: VERSION
+          value: "${shortSha}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pyfront-end-service
+spec:
+  selector:
+    app: pyfront-end
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: LoadBalancer
+EOF
+                        fi
+                        
+                        echo "Initiating Google Cloud Deploy release..."
+                        gcloud deploy releases create release-${shortSha}-${BUILD_NUMBER} \\
+                            --delivery-pipeline=pyfront-end-pipeline \\
+                            --region=${params.GCP_REGION} \\
+                            --source=. \\
+                            --images=${FULL_IMAGE_NAME}=${IMAGE_TAG}
+                        
+                        echo "Deployment initiated successfully!"
+                        echo "Release: release-${shortSha}-${BUILD_NUMBER}"
+                        echo "Pipeline: pyfront-end-pipeline"
+                        echo "Image: ${IMAGE_TAG}"
+                    """
+                }
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    echo "✅ Verifying deployment status"
+                    
+                    sh """
+                        # Check deployment status
+                        gcloud deploy releases describe release-${shortSha}-${BUILD_NUMBER} \\
+                            --delivery-pipeline=pyfront-end-pipeline \\
+                            --region=${params.GCP_REGION}
+                        
+                        # Wait for deployment to complete (optional)
+                        timeout 300 bash -c '
+                            while true; do
+                                STATUS=\$(gcloud deploy releases describe release-${shortSha}-${BUILD_NUMBER} \\
+                                    --delivery-pipeline=pyfront-end-pipeline \\
+                                    --region=${params.GCP_REGION} \\
+                                    --format="value(deliveryPipelineSnapshot.name)" 2>/dev/null || echo "PENDING")
+                                
+                                echo "Deployment status: \$STATUS"
+                                
+                                if [[ "\$STATUS" == *"SUCCEEDED"* ]]; then
+                                    echo "✅ Deployment completed successfully!"
+                                    break
+                                elif [[ "\$STATUS" == *"FAILED"* ]]; then
+                                    echo "❌ Deployment failed!"
+                                    exit 1
+                                fi
+                                
+                                echo "⏳ Waiting for deployment to complete..."
+                                sleep 30
+                            done
+                        '
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                // Cleanup
+                sh """
+                    # Cleanup temporary files
+                    rm -f /tmp/gcp-key.json || true
+                    
+                    # Docker logout
+                    docker logout || true
+                    
+                    # Display final summary
+                    echo ""
+                    echo "=== DEPLOYMENT SUMMARY ==="
+                    echo "Commit SHA: ${shortSha}"
+                    echo "Image: ${IMAGE_TAG}"
+                    echo "Image Existed: ${env.IMAGE_EXISTS}"
+                    echo "Deployment Target: ${params.DEPLOY_TARGET}"
+                    echo "GCP Project: ${params.GCP_PROJECT_ID}"
+                    echo "Release: release-${shortSha}-${BUILD_NUMBER}"
+                    echo "=========================="
+                """
+            }
+        }
+        
+        success {
+            echo "🎉 Pipeline completed successfully!"
+            // Optional: Send notifications
+            script {
+                if (env.IMAGE_EXISTS == "true") {
+                    echo "📦 Used existing image: ${IMAGE_TAG}"
+                } else {
+                    echo "🔨 Built new image: ${IMAGE_TAG}"
+                }
+                echo "🚀 Deployed using Google Cloud Deploy"
+            }
+        }
+        
+        failure {
+            echo "💥 Pipeline failed!"
+            // Optional: Send failure notifications
+        }
+        
+        cleanup {
+            sh """
+                # Final cleanup
+                docker system prune -f || true
+            """
+        }
+    }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
