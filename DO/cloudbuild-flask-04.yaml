@@ -1,0 +1,62 @@
+# cloudbuild-v4.yaml
+steps:
+  # Step 0: Run unit tests (as before)
+  - name: 'python:3.11'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install -r requirements.txt
+        pip install pytest
+        pytest --maxfail=1 --disable-warnings -q
+
+  # Step 1: Build container image (pass google_creds as build arg)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '--build-arg', 'GOOGLE_CREDS=$(google_creds)',
+        '-t', 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}',
+        '-t', 'gcr.io/$PROJECT_ID/flask-app:latest',
+        '.'
+      ]
+    secretEnv: ['google_creds']
+
+  # Step 2: Security scan (Trivy)
+  - name: 'aquasec/trivy:latest'
+    entrypoint: trivy
+    args:
+      [
+        'image',
+        '--exit-code', '1',
+        '--severity', 'CRITICAL,HIGH',
+        'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}'
+      ]
+
+  # Step 3: Push images if scan passed
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/flask-app:latest']
+
+  # Step 4: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run', 'deploy', 'flask-app-v4',
+        '--image', 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}',
+        '--region', '$REGION',
+        '--platform', 'managed',
+        '--no-allow-unauthenticated'
+      ]
+
+images:
+  - 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}'
+  - 'gcr.io/$PROJECT_ID/flask-app:latest'
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/google_creds/versions/latest
+      env: 'google_creds'
