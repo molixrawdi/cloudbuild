@@ -1026,7 +1026,7 @@ output "instance_groups" {
   description = "Instance group URLs"
   value = {
     primary   = google_compute_region_instance_group_manager.web_igm_primary.instance_group
-    secondary = google_compute_region_instance_group_manager.web_igm_secondary.instance_group
+    secondary =  google_compute_region_instance_group_manager.web_igm_secondary.instance_group
   }
 }
 
