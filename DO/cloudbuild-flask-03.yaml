@@ -1,0 +1,62 @@
+# cloudbuild-semver.yaml
+steps:
+  # Step 0: Run unit tests
+  - name: 'python:3.11'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install -r requirements.txt
+        pip install pytest
+        pytest --maxfail=1 --disable-warnings -q
+
+  # Step 1: Build container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-t', 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}',
+        '-t', 'gcr.io/$PROJECT_ID/flask-app:latest',
+        '.'
+      ]
+
+  # Step 2: Security scan (Trivy)
+  - name: 'aquasec/trivy:latest'
+    entrypoint: trivy
+    args:
+      [
+        'image',
+        '--exit-code', '1',
+        '--severity', 'CRITICAL,HIGH',
+        'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}'
+      ]
+
+  # Step 3: Push images if scan passed
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/flask-app:latest']
+
+  # Step 4: Deploy to Cloud Run (authenticated only)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run', 'deploy', 'flask-app-semver',
+        '--image', 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}',
+        '--region', '$REGION',
+        '--platform', 'managed',
+        '--no-allow-unauthenticated'
+      ]
+
+substitutions:
+  _SERVICE_NAME: "flask-app-semver"
+
+images:
+  - 'gcr.io/$PROJECT_ID/flask-app:${TAG_NAME}'
+  - 'gcr.io/$PROJECT_ID/flask-app:latest'
+
+# Trigger suggestion (in Cloud Build UI or gcloud):
+#   Type: Tag
+#   Regex: ^v[0-9]+\.[0-9]+\.[0-9]+$
