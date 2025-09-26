@@ -1,0 +1,49 @@
+# cloudbuild-enhanced.yaml
+steps:
+  # Step 0: Run unit tests
+  - name: 'python:3.11'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install -r requirements.txt
+        pip install pytest
+        pytest --maxfail=1 --disable-warnings -q
+
+  # Step 1: Build container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/flask-app:$SHORT_SHA', '.']
+
+  # Step 2: Security scan (Trivy)
+  - name: 'aquasec/trivy:latest'
+    entrypoint: trivy
+    args:
+      [
+        'image',
+        '--exit-code', '1',
+        '--severity', 'CRITICAL,HIGH',
+        'gcr.io/$PROJECT_ID/flask-app:$SHORT_SHA'
+      ]
+
+  # Step 3: Push image only if scan passed
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/flask-app:$SHORT_SHA']
+
+  # Step 4: Deploy to Cloud Run (authenticated access only)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      [
+        'run', 'deploy', 'flask-app-secure',
+        '--image', 'gcr.io/$PROJECT_ID/flask-app:$SHORT_SHA',
+        '--region', '$REGION',
+        '--platform', 'managed',
+        '--no-allow-unauthenticated'
+      ]
+
+substitutions:
+  _SERVICE_NAME: "flask-app-secure"
+
+images:
+  - 'gcr.io/$PROJECT_ID/flask-app:$SHORT_SHA'
+timeout: '1200s'  # 20 minutes
