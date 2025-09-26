@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+
+    environment {
+        PROJECT_ID   = 'your-gcp-project-id'
+        REGION       = 'us-central1'
+        SERVICE_NAME = 'flask-function'
+        BRANCH_NAME  = 'develop'
+        // This assumes Jenkins has GOOGLE_APPLICATION_CREDENTIALS configured
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-sa-key') 
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: "${BRANCH_NAME}",
+                    url: 'https://github.com/example-devops.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                  python3 -m venv venv
+                  . venv/bin/activate
+                  pip install --upgrade pip
+                  pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                  . venv/bin/activate
+                  pip install pytest
+                  pytest --maxfail=1 --disable-warnings -q
+                '''
+            }
+        }
+
+        stage('Deploy to Cloud Functions') {
+            steps {
+                sh '''
+                  gcloud functions deploy ${SERVICE_NAME} \
+                    --gen2 \
+                    --runtime=python311 \
+                    --entry-point=app \
+                    --region=${REGION} \
+                    --project=${PROJECT_ID} \
+                    --source=. \
+                    --trigger-http \
+                    --allow-unauthenticated
+                '''
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Build or Deployment failed!"
+        }
+        success {
+            echo "Flask app successfully deployed to Cloud Functions!"
+        }
+    }
+}
