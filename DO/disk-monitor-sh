@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Log file
+LOG_FILE="/var/log/disk_usage_alert.log"
+
+# Threshold (70%)
+THRESHOLD=70
+
+# Get disk usage (ignore tmpfs, loop devices, etc.)
+df -h --exclude-type=tmpfs --exclude-type=devtmpfs | awk 'NR>1 {print $5 " " $6}' | while read output
+do
+  usep=$(echo $output | awk '{print $1}' | tr -d '%')
+  partition=$(echo $output | awk '{print $2}')
+
+  if [ $usep -ge $THRESHOLD ]; then
+    message="ALERT: Disk usage on $partition is ${usep}% (threshold: ${THRESHOLD}%)"
+    echo "$(date): $message" | tee -a $LOG_FILE
+  fi
+done
